@@ -6,37 +6,91 @@ const URL_RE = /(https?:\/\/[^\s]+)/i;
 // Girlfriend numbers - bot stays silent
 const GIRLFRIEND_NUMBERS = ["254716065432", "+254716065432", "0716065432", "254708219667", "+254708219667"];
 
-// Language detection
+// KEYWORDS for function execution
+const KEYWORDS = {
+  // Sports
+  SPORTS_LIVE: ['live score', 'scores', 'live scores', 'matokeo', 'current matches', 'today matches', 'live games'],
+  SPORTS_STANDINGS: ['standings', 'table', 'msimamo', 'league table', 'epl table', 'premier league table', 'ranking', 'points'],
+  SPORTS_FIXTURES: ['fixtures', 'upcoming matches', 'next matches', 'ratiba'],
+  SPORTS_PLAYER: ['player', 'player stats', 'player information', 'who is', 'mchezaji'],
+  SPORTS_TEAM: ['team', 'team stats', 'timu'],
+  
+  // Games
+  GAME_DICE: ['dice', 'roll dice', 'roll d', 'kete', 'roll a die'],
+  GAME_COIN: ['coin', 'flip coin', 'toss', 'sarafu'],
+  GAME_JOKE: ['joke', 'utani', 'chesi', 'tell me a joke', 'funny', 'laugh'],
+  GAME_TRUTH: ['truth', 'ukweli', 'truth or dare', 'truth question'],
+  GAME_DARE: ['dare', 'changamoto', 'challenge'],
+  GAME_8BALL: ['8ball', 'magic 8', '8 ball', 'ask the ball', 'mpira wa ajabu'],
+  GAME_RPS: ['rock paper scissors', 'rps', 'jiwe karatasi makasi', 'play rps'],
+  
+  // Downloads
+  DOWNLOAD_MP3: ['mp3', 'audio', 'download song', 'download music', 'sauti'],
+  DOWNLOAD_INSTAGRAM: ['instagram', 'insta', 'ig download', 'reel'],
+  DOWNLOAD_FACEBOOK: ['facebook', 'fb', 'fb video'],
+  DOWNLOAD_TIKTOK: ['tiktok', 'tt', 'tik tok'],
+  DOWNLOAD_TWITTER: ['twitter', 'x.com', 'tweet video'],
+  
+  // News
+  NEWS_TRENDING: ['trending', 'trending news', 'trending now', 'popular'],
+  NEWS_BBC: ['bbc', 'bbc news', 'bbc world'],
+  NEWS_SPORTS: ['sports news', 'football news', 'epl news'],
+  
+  // Quotes
+  QUOTE_RANDOM: ['quote', 'nukuu', 'wisdom', 'sayings'],
+  QUOTE_INSPIRE: ['inspire', 'motivation', 'motivational', 'inspiring'],
+  
+  // Chat
+  HELP: ['help', 'commands', 'what can you do', 'unaweza nini', 'function', 'capabilities'],
+  GREETING: ['hello', 'hi', 'hey', 'hallo', 'sasa', 'vipi', 'niaje', 'habari', 'mambo', 'yo', 'sup', 'ssup'],
+  THANK: ['thank', 'thanks', 'asante', 'thank you', 'thx'],
+  HOW_ARE_YOU: ['how are you', 'how are you doing', 'uraje', 'uko aje', 'habari yako'],
+  WHO_ARE_YOU: ['who are you', 'wewe ni nani', 'your name', 'jina lako', 'what is your name'],
+};
+
+// Detect language from user message - DON'T force Swahili
 function detectLanguage(text) {
-  const swahiliWords = ['sasa', 'vipi', 'niaje', 'habari', 'asante', 'sawa', 'poa', 'mambo', 'nzuri', 'karibu', 'sema', 'niambie', 'rada', 'alaf', 'ssup', 'kiac', 'hehe', 'yoh', 'bana', 'mshale', 'fiti', 'fresh', 'chomoa', 'kaza', 'bamba', 'wacha', 'hapo', 'safi', 'vyema', 'salama', 'shwari', 'hamjambo', 'hatari', 'mzuka', 'kali', 'nonoka', 'piga', 'mwambie', 'kwangu', 'kwako', 'kwetu', 'huku', 'huko'];
+  const swahiliWords = ['sasa', 'vipi', 'niaje', 'habari', 'asante', 'sawa', 'poa', 'mambo', 'nzuri', 'karibu', 'sema', 'niambie', 'rada', 'alaf', 'ssup', 'kiac', 'hehe', 'yoh', 'bana', 'fiti', 'fresh', 'hapo', 'safi', 'vyema', 'salama', 'shwari'];
   
   const lower = text.toLowerCase();
+  let swahiliCount = 0;
   for (const word of swahiliWords) {
-    if (lower.includes(word)) return "swahili";
+    if (lower.includes(word)) swahiliCount++;
+  }
+  
+  // If message has Swahili words or is very short common greeting
+  if (swahiliCount > 0 || ['sasa', 'vipi', 'niaje', 'habari', 'mambo', 'poa'].includes(lower)) {
+    return "swahili";
   }
   return "english";
 }
 
-// Build context with user's message
+// Simple system prompt that matches user's language
 function buildPrompt(userText, history, language) {
-  const hist = history.slice(-8).map(m => 
-    `${m.role === "user" ? "👤" : "🤖"}: ${m.content}`
+  const hist = history.slice(-6).map(m => 
+    `${m.role === "user" ? "User" : "Marisel"}: ${m.content}`
   ).join("\n");
   
-  const langInstruction = language === "swahili" 
-    ? "Jibu kwa Kiswahili au Sheng. Tumia maneno kama 'rada', 'alaf', 'ssup', 'kiac', 'niambie'."
-    : "Reply in natural English, but can mix with Sheng casually.";
-  
-  return `Wewe ni Marisel, Mkenya real. Jibu fupi, moja kwa moja, kwenye context. ${langInstruction}
+  if (language === "swahili") {
+    return `Wewe ni Marisel, Mkenya. Jibu fupi kwa Kiswahili au Sheng. Usijitambulishe kama AI.
 
-HISTORIA:
+Historia:
 ${hist}
 
-👤: ${userText}
-🤖:`;
+User: ${userText}
+Marisel:`;
+  } else {
+    return `You are Marisel, a Kenyan guy. Reply short in English. Never say "as an AI" or "how can I help you". Say "niambie" instead.
+
+History:
+${hist}
+
+User: ${userText}
+Marisel:`;
+  }
 }
 
-// Clean AI response - remove AI talk, keep context
+// Clean response - keep in user's language
 function cleanResponse(text, originalMessage, language) {
   if (!text) return null;
   
@@ -53,9 +107,6 @@ function cleanResponse(text, originalMessage, language) {
     /Feel free/gi,
     /I'd be happy/gi,
     /Let me know/gi,
-    /you can ask me/gi,
-    /I'm here to/gi,
-    /my purpose is/gi,
   ];
   
   for (const re of removePatterns) {
@@ -64,38 +115,29 @@ function cleanResponse(text, originalMessage, language) {
   
   // Replace help phrases
   cleaned = cleaned.replace(/How can I (help|assist) you/gi, "Niambie");
-  cleaned = cleaned.replace(/What can I (help|assist) you with/gi, "Niambie");
   
-  // Make sure response acknowledges the user's message
-  const lowerOriginal = originalMessage.toLowerCase();
-  const responseLower = cleaned.toLowerCase();
-  
-  // If user greeted and response doesn't acknowledge, add acknowledgment
-  const greetings = ['sasa', 'vipi', 'niaje', 'habari', 'hello', 'hi', 'hey', 'hallo'];
-  const isGreeting = greetings.some(g => lowerOriginal === g || lowerOriginal.startsWith(g));
-  
-  if (isGreeting && !responseLower.includes('sasa') && !responseLower.includes('vipi') && !responseLower.includes('poa')) {
-    const shortAcks = ['Sasa', 'Vipi', 'Poa', 'Yo', 'Rada', 'Alaf'];
-    const ack = shortAcks[Math.floor(Math.random() * shortAcks.length)];
-    cleaned = `${ack}. ${cleaned}`;
+  // Keep it short - 2 sentences max
+  const sentences = cleaned.match(/[^.!?]+[.!?]+/g) || [cleaned];
+  if (sentences.length > 2) {
+    cleaned = sentences.slice(0, 2).join(" ");
   }
   
-  // Limit length - short and sweet
-  if (cleaned.length > 200) {
-    cleaned = cleaned.substring(0, 200);
+  // Length limit
+  if (cleaned.length > 180) {
+    cleaned = cleaned.substring(0, 180);
     const lastPeriod = cleaned.lastIndexOf(".");
-    if (lastPeriod > 50) cleaned = cleaned.substring(0, lastPeriod + 1);
+    if (lastPeriod > 40) cleaned = cleaned.substring(0, lastPeriod + 1);
   }
   
   cleaned = cleaned.trim();
   
-  // Fallback if empty
+  // Fallback
   if (!cleaned || cleaned.length < 2) {
     if (language === "swahili") {
-      const fallbacks = ["Sawa", "Hehe", "Mmmh", "Vipi", "Pooh", "Rada", "Alaf", "Ssup", "Niambie", "Kiac"];
+      const fallbacks = ["Sawa", "Hehe", "Mmmh", "Vipi", "Pooh", "Rada"];
       return fallbacks[Math.floor(Math.random() * fallbacks.length)];
     } else {
-      const fallbacks = ["Ok", "Sure", "Alright", "Got it", "Cool", "Nice"];
+      const fallbacks = ["Ok", "Sure", "Alright", "Cool", "Nice", "Got it"];
       return fallbacks[Math.floor(Math.random() * fallbacks.length)];
     }
   }
@@ -103,129 +145,63 @@ function cleanResponse(text, originalMessage, language) {
   return cleaned;
 }
 
-// Quick intelligent responses based on message content
-function quickIntelligentReply(text, language) {
+// Quick reply - matches user's language
+function quickReply(text, language) {
   const lower = text.toLowerCase().trim();
   
-  // Greetings - reply to the specific greeting
-  if (lower === "sasa" || lower === "sasa?" || lower === "sasa!") {
-    const replies = ["Poa", "Poa yako?", "Poa sana", "Fresh", "Fiti"];
-    return replies[Math.floor(Math.random() * replies.length)];
+  // Greetings
+  if (KEYWORDS.GREETING.some(k => lower === k || lower.startsWith(k))) {
+    if (language === "swahili") {
+      const replies = ["Sasa", "Vipi", "Poa", "Rada", "Alaf"];
+      return replies[Math.floor(Math.random() * replies.length)];
+    } else {
+      const replies = ["Hey", "Hi", "Yo", "Ssup", "Hey there"];
+      return replies[Math.floor(Math.random() * replies.length)];
+    }
   }
   
-  if (lower === "vipi" || lower === "vipi?") {
-    const replies = ["Poa", "Salama", "Fresh", "Fiti tu"];
-    return replies[Math.floor(Math.random() * replies.length)];
-  }
-  
-  if (lower === "niaje" || lower === "niaje?") {
-    return "Poa, na wewe?";
-  }
-  
-  if (lower === "habari" || lower === "habari yako") {
-    return "Nzuri, kwako?";
-  }
-  
-  if (lower === "mambo" || lower === "mambo?") {
-    return "Poa";
-  }
-  
-  if (lower === "hello" || lower === "hi" || lower === "hey") {
-    const replies = ["Sasa", "Vipi", "Yo", "Hey", "Ssup"];
-    return replies[Math.floor(Math.random() * replies.length)];
-  }
-  
-  if (lower === "hallo") {
-    return "Sasa";
-  }
-  
-  // Short responses
-  if (lower === "poa") {
-    return "Sawa";
-  }
-  
-  if (lower === "sawa") {
-    return "Nzuri";
-  }
-  
-  if (lower === "asante" || lower === "thank you" || lower === "thanks") {
-    return "Karibu";
-  }
-  
-  // Who are you
-  if (lower.includes("wewe ni nani") || lower === "who are you" || lower === "what's your name") {
-    return "Mi ni Marisel. Na wewe?";
-  }
-  
-  // What can you do
-  if (lower.includes("unaweza nini") || lower.includes("what can you do") || lower.includes("help")) {
-    return "Niambie. Naeza download video/audio, games, live scores za EPL, news, quotes, na chat tu.";
+  // Thank you
+  if (KEYWORDS.THANK.some(k => lower.includes(k))) {
+    return language === "swahili" ? "Karibu" : "Welcome";
   }
   
   // How are you
-  if (lower.includes("how are you") || lower.includes("uraje") || lower.includes("uko aje")) {
-    return "Poa. Na wewe uko aje?";
+  if (KEYWORDS.HOW_ARE_YOU.some(k => lower.includes(k))) {
+    if (language === "swahili") {
+      return "Poa, na wewe?";
+    } else {
+      return "I'm good, you?";
+    }
   }
   
-  // What's up
-  if (lower.includes("what's up") || lower.includes("sup") || lower === "ssup") {
-    return "Poa tu. Niambie.";
+  // Who are you
+  if (KEYWORDS.WHO_ARE_YOU.some(k => lower.includes(k))) {
+    if (language === "swahili") {
+      return "Mi ni Marisel. Na wewe nani?";
+    } else {
+      return "I'm Marisel. What's your name?";
+    }
+  }
+  
+  // Help
+  if (KEYWORDS.HELP.some(k => lower.includes(k))) {
+    if (language === "swahili") {
+      return "Niambie. Naeza: download, games, live scores za EPL, news, quotes.";
+    } else {
+      return "Niambie. I can: download media, play games, show EPL live scores, news, quotes.";
+    }
   }
   
   return null;
 }
 
-// Handle games with contextual replies
-async function handleGame(text, language) {
-  const lower = text.toLowerCase();
-  
-  try {
-    if (lower.includes("dice") || lower.includes("roll") || lower.includes("kete")) {
-      const sides = lower.includes("20") ? 20 : lower.includes("12") ? 12 : 6;
-      const result = await games.rollDice(sides, 1);
-      const value = result.result || result.value || result;
-      return `🎲 Umepata ${value}`;
-    }
-    
-    if (lower.includes("coin") || lower.includes("flip") || lower.includes("sarafu")) {
-      const result = await games.flipCoin();
-      const value = result.result || result;
-      return `🪙 ${value === "Heads" ? "Kichwa" : "Kura"} imetoka`;
-    }
-    
-    if (lower.includes("joke") || lower.includes("utani") || lower.includes("chesi")) {
-      const result = await games.joke();
-      if (result.joke) return result.joke;
-      if (result.setup) return `${result.setup} ${result.delivery || ""}`;
-      return language === "swahili" ? "Hakuna joke sasa" : "No joke right now";
-    }
-    
-    if (lower.includes("truth") || lower.includes("ukweli")) {
-      const result = await games.truth();
-      return result.question || result.result || result;
-    }
-    
-    if (lower.includes("dare") || lower.includes("changamoto")) {
-      const result = await games.dare();
-      return result.challenge || result.result || result;
-    }
-    
-    if (lower.includes("8ball") || lower.includes("magic")) {
-      const result = await games.eightBall("question");
-      return `🔮 ${result.answer || result.result || result}`;
-    }
-  } catch (err) {
-    return null;
-  }
-  return null;
-}
-
-// Handle sports
+// Handle sports with language
 async function handleSports(text, language) {
   const lower = text.toLowerCase();
   
   try {
-    if (lower.includes("live score") || lower.includes("scores") || lower.includes("matokeo")) {
+    // Live scores
+    if (KEYWORDS.SPORTS_LIVE.some(k => lower.includes(k))) {
       const result = await sports.liveScores();
       if (Array.isArray(result) && result.length) {
         const scores = result.slice(0, 5).map(m => 
@@ -236,15 +212,62 @@ async function handleSports(text, language) {
       return language === "swahili" ? "Hakuna live scores sasa" : "No live scores now";
     }
     
-    if (lower.includes("standings") || lower.includes("table") || lower.includes("msimamo")) {
+    // Standings
+    if (KEYWORDS.SPORTS_STANDINGS.some(k => lower.includes(k))) {
       const result = await sports.soccerStandings();
       if (Array.isArray(result) && result.length) {
         const table = result.slice(0, 10).map((t, i) => 
           `${i+1}. ${t.name || t.team} (${t.points || 0})`
         ).join("\n");
-        return `🏆 EPL Standings\n${table}`;
+        return `🏆 ${language === "swahili" ? "Msimamo wa EPL" : "EPL Standings"}\n${table}`;
       }
       return language === "swahili" ? "Standings haipo sasa" : "Standings not available";
+    }
+  } catch (err) {
+    return null;
+  }
+  return null;
+}
+
+// Handle games with language
+async function handleGame(text, language) {
+  const lower = text.toLowerCase();
+  
+  try {
+    if (KEYWORDS.GAME_DICE.some(k => lower.includes(k))) {
+      const sides = lower.includes("20") ? 20 : lower.includes("12") ? 12 : 6;
+      const result = await games.rollDice(sides, 1);
+      const value = result.result || result.value || result;
+      return language === "swahili" ? `🎲 Umepata ${value}` : `🎲 You rolled ${value}`;
+    }
+    
+    if (KEYWORDS.GAME_COIN.some(k => lower.includes(k))) {
+      const result = await games.flipCoin();
+      const value = result.result || result;
+      const resultText = value === "Heads" ? (language === "swahili" ? "Kichwa" : "Heads") : (language === "swahili" ? "Kura" : "Tails");
+      return language === "swahili" ? `🪙 ${resultText} imetoka` : `🪙 It's ${resultText}`;
+    }
+    
+    if (KEYWORDS.GAME_JOKE.some(k => lower.includes(k))) {
+      const result = await games.joke();
+      if (result.joke) return result.joke;
+      if (result.setup) return `${result.setup}\n${result.delivery || ""}`;
+      return language === "swahili" ? "Hakuna joke sasa" : "No joke right now";
+    }
+    
+    if (KEYWORDS.GAME_TRUTH.some(k => lower.includes(k))) {
+      const result = await games.truth();
+      return result.question || result.result || result;
+    }
+    
+    if (KEYWORDS.GAME_DARE.some(k => lower.includes(k))) {
+      const result = await games.dare();
+      return result.challenge || result.result || result;
+    }
+    
+    if (KEYWORDS.GAME_8BALL.some(k => lower.includes(k))) {
+      const result = await games.eightBall("question");
+      return `🔮 ${result.answer || result.result || result}`;
     }
   } catch (err) {
     return null;
@@ -260,19 +283,19 @@ async function handleDownload(text) {
   const lower = text.toLowerCase();
   
   try {
-    if (lower.includes("mp3") || lower.includes("audio")) {
+    if (KEYWORDS.DOWNLOAD_MP3.some(k => lower.includes(k)) || lower.includes('youtube')) {
       const result = await downloads.youtubeMp3(url);
       const link = result.downloadUrl || result.url || result.result;
       if (link && link.startsWith("http")) return link;
     }
     
-    if (lower.includes("instagram") || url.includes("instagram.com")) {
+    if (KEYWORDS.DOWNLOAD_INSTAGRAM.some(k => lower.includes(k)) || url.includes('instagram.com')) {
       const result = await downloads.instagram(url);
       const link = result.downloadUrl || result.url || result.result;
       if (link && link.startsWith("http")) return link;
     }
     
-    if (url.includes("facebook.com")) {
+    if (KEYWORDS.DOWNLOAD_FACEBOOK.some(k => lower.includes(k)) || url.includes('facebook.com')) {
       const result = await downloads.facebook(url);
       const link = result.downloadUrl || result.url || result.result;
       if (link && link.startsWith("http")) return link;
@@ -283,23 +306,15 @@ async function handleDownload(text) {
   return null;
 }
 
-// Handle quotes
+// Handle quotes with language
 async function handleQuote(text, language) {
   const lower = text.toLowerCase();
   
   try {
-    if (lower.includes("quote") || lower.includes("nukuu") || lower.includes("wisdom")) {
+    if (KEYWORDS.QUOTE_RANDOM.some(k => lower.includes(k))) {
       const result = await quotes.random();
       if (result.quote || result.text) {
         return `💬 "${result.quote || result.text}" - ${result.author || "Unknown"}`;
-      }
-      return null;
-    }
-    
-    if (lower.includes("inspire") || lower.includes("motivation")) {
-      const result = await quotes.inspirational();
-      if (result.quote || result.text) {
-        return `💪 "${result.quote || result.text}" - ${result.author || "Unknown"}`;
       }
       return null;
     }
@@ -309,44 +324,41 @@ async function handleQuote(text, language) {
   return null;
 }
 
-// Main chat handler - uses ALL AI APIs, no errors
+// Main chat handler
 async function handleChat(jid, text) {
   const language = detectLanguage(text);
   
-  // Step 1: Quick intelligent reply (acknowledges the specific message)
-  const quick = quickIntelligentReply(text, language);
+  // Quick reply
+  const quick = quickReply(text, language);
   if (quick) return quick;
   
-  // Step 2: Games
+  // Games
   const game = await handleGame(text, language);
   if (game) return game;
   
-  // Step 3: Sports
+  // Sports
   const sportsResult = await handleSports(text, language);
   if (sportsResult) return sportsResult;
   
-  // Step 4: Downloads
+  // Downloads
   const download = await handleDownload(text);
   if (download) return download;
   
-  // Step 5: Quotes
+  // Quotes
   const quote = await handleQuote(text, language);
   if (quote) return quote;
   
-  // Step 6: AI Chat - Use ALL available APIs
+  // AI Chat
   try {
-    const history = db.recentMsgs(jid, 8);
+    const history = db.recentMsgs(jid, 6);
     const prompt = buildPrompt(text, history, language);
     
-    // Use smartChat which tries ALL 11 APIs
     let response = await ai.smartChat(prompt);
     
-    // If smartChat fails, try direct with the new /ai/chat endpoint
     if (!response || response.length < 3) {
       response = await ai.chat(prompt);
     }
     
-    // Final fallback - try with just the original text
     if (!response || response.length < 3) {
       response = await ai.smartChat(text);
     }
@@ -354,40 +366,25 @@ async function handleChat(jid, text) {
     const cleaned = cleanResponse(response || "", text, language);
     if (cleaned) return cleaned;
     
-    // Ultimate fallback - contextual based on user's message
-    const lastResort = [
-      "Sawa, niambie zaidi.",
-      "Hehe, sawa. Endelea.",
-      "Poa. Una maoni gani?",
-      "Sema tu.",
-      "Niambie unataka nini.",
-    ];
-    return lastResort[Math.floor(Math.random() * lastResort.length)];
+    // Friendly fallback
+    const fallbacks = language === "swahili" 
+      ? ["Sawa", "Hehe", "Mmmh", "Vipi", "Niambie"]
+      : ["Ok", "Sure", "Alright", "Got it", "Cool"];
+    return fallbacks[Math.floor(Math.random() * fallbacks.length)];
     
   } catch (err) {
-    // SILENT FAILURE - NEVER send error to user
     console.error("[chat] Error:", err.message);
-    
-    // Contextual fallbacks based on user's message - NOT errors
-    const contextual = [
-      "Sawa.",
-      "Hehe.",
-      "Mmmh.",
-      "Vipi?",
-      "Niambie.",
-      "Rada.",
-      "Alaf?",
-      "Ssup?",
-    ];
-    return contextual[Math.floor(Math.random() * contextual.length)];
+    const fallbacks = language === "swahili"
+      ? ["Sawa", "Hehe", "Mmmh", "Vipi"]
+      : ["Ok", "Sure", "Alright", "Cool"];
+    return fallbacks[Math.floor(Math.random() * fallbacks.length)];
   }
 }
 
-// Main route function
 async function route(jid, text, isOwner = false) {
   if (!text) return null;
   
-  // Silent mode for girlfriends
+  // Silent for girlfriends
   const isGirlfriend = GIRLFRIEND_NUMBERS.some(num => jid.includes(num));
   if (isGirlfriend) {
     console.log(`[route] Silent mode for girlfriend: ${jid}`);
@@ -396,17 +393,15 @@ async function route(jid, text, isOwner = false) {
   
   const response = await handleChat(jid, text);
   
-  // NEVER send errors to anyone (including owner via chat)
+  // Filter errors
   if (response && (response.toLowerCase().includes("error") || 
                    response.toLowerCase().includes("fail") || 
-                   response.toLowerCase().includes("network slow") ||
-                   response.toLowerCase().includes("try again"))) {
-    // Replace with friendly response
-    const friendly = ["Sawa", "Hehe", "Mmmh", "Vipi", "Niambie", "Rada", "Alaf", "Ssup", "Poa"];
+                   response.toLowerCase().includes("network"))) {
+    const friendly = ["Sawa", "Hehe", "Mmmh", "Vipi", "Niambie", "Rada", "Alaf", "Ssup", "Poa", "Ok", "Sure", "Cool"];
     return friendly[Math.floor(Math.random() * friendly.length)];
   }
   
   return response;
 }
 
-module.exports = { route };
+module.exports = { route, KEYWORDS };
