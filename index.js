@@ -407,4 +407,43 @@ async function start() {
     }
     if (connection === "open") {
       connectionStatus = "open";
-      currentQR = null
+      currentQR = null;
+      reconnectAttempts = 0;
+      console.log("[wa] connected as", sock.user?.id);
+    }
+    if (connection === "close") {
+      connectionStatus = "closed";
+      const code = lastDisconnect?.error?.output?.statusCode;
+      const loggedOut = code === DisconnectReason.loggedOut;
+      console.log("[wa] disconnected", code, loggedOut ? "(logged out)" : "");
+      if (loggedOut) {
+        try {
+          fs.rmSync(AUTH_DIR, { recursive: true, force: true });
+          fs.mkdirSync(AUTH_DIR, { recursive: true });
+        } catch {}
+      }
+      const wait = nextBackoff();
+      reconnectAttempts++;
+      console.log(`[wa] reconnecting in ${wait}ms`);
+      setTimeout(() => start().catch((e) => console.error(e)), wait);
+    }
+  });
+
+  sock.ev.on("messages.upsert", async ({ messages, type }) => {
+    if (type !== "notify") return;
+    for (const m of messages) {
+      handleMessage(m);
+    }
+  });
+}
+
+// Live football monitor
+footballMonitor.start(sendToOwner);
+
+start().catch((e) => {
+  console.error("[boot]", e);
+  setTimeout(() => start().catch(() => {}), 5000);
+});
+
+process.on("unhandledRejection", (e) => console.error("[unhandled]", e));
+process.on("uncaughtException", (e) => console.error("[uncaught]", e));
