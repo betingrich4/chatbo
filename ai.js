@@ -283,23 +283,23 @@ async function handleDownload(text) {
   return null;
 }
 
-// Handle news
-async function handleNews(text, language) {
+// Handle quotes
+async function handleQuote(text, language) {
   const lower = text.toLowerCase();
   
   try {
-    if (lower.includes("trending") || lower.includes("trend")) {
-      const result = await news.trending();
-      if (Array.isArray(result) && result.length) {
-        return result.slice(0, 3).map(n => `📰 ${n.title || n.headline}`).join("\n");
+    if (lower.includes("quote") || lower.includes("nukuu") || lower.includes("wisdom")) {
+      const result = await quotes.random();
+      if (result.quote || result.text) {
+        return `💬 "${result.quote || result.text}" - ${result.author || "Unknown"}`;
       }
       return null;
     }
     
-    if (lower.includes("bbc")) {
-      const result = await news.bbc();
-      if (Array.isArray(result) && result.length) {
-        return result.slice(0, 3).map(n => `📺 ${n.title || n.headline}`).join("\n");
+    if (lower.includes("inspire") || lower.includes("motivation")) {
+      const result = await quotes.inspirational();
+      if (result.quote || result.text) {
+        return `💪 "${result.quote || result.text}" - ${result.author || "Unknown"}`;
       }
       return null;
     }
@@ -329,60 +329,27 @@ async function handleChat(jid, text) {
   const download = await handleDownload(text);
   if (download) return download;
   
-  // Step 5: News
-  const newsResult = await handleNews(text, language);
-  if (newsResult) return newsResult;
+  // Step 5: Quotes
+  const quote = await handleQuote(text, language);
+  if (quote) return quote;
   
-  // Step 6: AI Chat - Use ALL available APIs with smart fallback
+  // Step 6: AI Chat - Use ALL available APIs
   try {
     const history = db.recentMsgs(jid, 8);
     const prompt = buildPrompt(text, history, language);
     
-    // Try all APIs in order of speed/reliability
-    let response = null;
-    let usedApi = null;
+    // Use smartChat which tries ALL 11 APIs
+    let response = await ai.smartChat(prompt);
     
-    // Try GPT-3 (fastest)
-    try {
+    // If smartChat fails, try direct with the new /ai/chat endpoint
+    if (!response || response.length < 3) {
       response = await ai.chat(prompt);
-      if (response && response.length > 3) usedApi = "gpt3";
-    } catch (e) {}
-    
-    // Try ChatGPT if GPT-3 failed
-    if (!response || response.length < 3) {
-      try {
-        response = await ai.chatGpt(prompt);
-        if (response && response.length > 3) usedApi = "chatgpt";
-      } catch (e) {}
     }
     
-    // Try Gifted GPT-4
+    // Final fallback - try with just the original text
     if (!response || response.length < 3) {
-      try {
-        response = await ai.chatGifted(text);
-        if (response && response.length > 3) usedApi = "gifted";
-      } catch (e) {}
+      response = await ai.smartChat(text);
     }
-    
-    // Try DeepSeek via Gifted
-    if (!response || response.length < 3) {
-      try {
-        const { ai: deepAi } = require("./apis");
-        response = await deepAi.chatDeepSeek?.(text) || null;
-        if (response && response.length > 3) usedApi = "deepseek";
-      } catch (e) {}
-    }
-    
-    // Try Gemini via Gifted
-    if (!response || response.length < 3) {
-      try {
-        const { ai: geminiAi } = require("./apis");
-        response = await geminiAi.chatGemini?.(text) || null;
-        if (response && response.length > 3) usedApi = "gemini";
-      } catch (e) {}
-    }
-    
-    console.log(`[ai] Used API: ${usedApi || "none"}`);
     
     const cleaned = cleanResponse(response || "", text, language);
     if (cleaned) return cleaned;
