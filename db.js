@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS messages (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   jid TEXT,
-  role TEXT,        -- 'user' or 'marisel'
+  role TEXT,
   content TEXT,
   ts INTEGER
 );
@@ -41,6 +41,12 @@ CREATE TABLE IF NOT EXISTS persona (
   note TEXT,
   ts INTEGER
 );
+CREATE TABLE IF NOT EXISTS statuses (
+  id TEXT PRIMARY KEY,
+  from_jid TEXT,
+  viewed INTEGER,
+  ts INTEGER
+);
 `);
 
 const stmts = {
@@ -49,9 +55,7 @@ const stmts = {
     ON CONFLICT(jid) DO UPDATE SET name=excluded.name, last_seen=excluded.last_seen
   `),
   addMsg: db.prepare(`INSERT INTO messages (jid, role, content, ts) VALUES (?,?,?,?)`),
-  recentMsgs: db.prepare(
-    `SELECT role, content FROM messages WHERE jid=? ORDER BY ts DESC LIMIT ?`
-  ),
+  recentMsgs: db.prepare(`SELECT role, content FROM messages WHERE jid=? ORDER BY ts DESC LIMIT ?`),
   pause: db.prepare(`INSERT OR REPLACE INTO paused_chats (jid, ts) VALUES (?, ?)`),
   unpause: db.prepare(`DELETE FROM paused_chats WHERE jid=?`),
   isPaused: db.prepare(`SELECT 1 FROM paused_chats WHERE jid=?`),
@@ -67,27 +71,21 @@ const stmts = {
   `),
   addPersona: db.prepare(`INSERT INTO persona (note, ts) VALUES (?, ?)`),
   allPersona: db.prepare(`SELECT note FROM persona ORDER BY ts ASC`),
+  markStatusViewed: db.prepare(`INSERT OR REPLACE INTO statuses (id, from_jid, viewed, ts) VALUES (?,?,?,?)`),
+  isStatusViewed: db.prepare(`SELECT 1 FROM statuses WHERE id=?`),
 };
 
 module.exports = {
-  upsertUser: (jid, name) =>
-    stmts.upsertUser.run(jid, name || "", Date.now(), Date.now()),
+  upsertUser: (jid, name) => stmts.upsertUser.run(jid, name || "", Date.now(), Date.now()),
   addMsg: (jid, role, content) => stmts.addMsg.run(jid, role, content, Date.now()),
   recentMsgs: (jid, limit = 20) => stmts.recentMsgs.all(jid, limit).reverse(),
   pause: (jid) => stmts.pause.run(jid, Date.now()),
   unpause: (jid) => stmts.unpause.run(jid),
   isPaused: (jid) => !!stmts.isPaused.get(jid),
   getMatch: (id) => stmts.getMatch.get(id),
-  upsertMatch: (m) =>
-    stmts.upsertMatch.run(
-      m.match_id,
-      m.home,
-      m.away,
-      m.home_score,
-      m.away_score,
-      m.last_event || "",
-      Date.now()
-    ),
+  upsertMatch: (m) => stmts.upsertMatch.run(m.match_id, m.home, m.away, m.home_score, m.away_score, m.last_event || "", Date.now()),
   addPersona: (note) => stmts.addPersona.run(note, Date.now()),
   allPersona: () => stmts.allPersona.all().map((r) => r.note),
+  markStatusViewed: (id, fromJid) => stmts.markStatusViewed.run(id, fromJid, 1, Date.now()),
+  isStatusViewed: (id) => !!stmts.isStatusViewed.get(id),
 };
