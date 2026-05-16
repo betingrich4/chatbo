@@ -29,7 +29,10 @@ function extractDavidResponse(data) {
   if (data.response) return data.response;
   if (data.reply) return data.reply;
   if (data.answer) return data.answer;
-  if (data.result) return extractDavidResponse(data.result);
+  if (data.result) {
+    if (typeof data.result === "string") return data.result;
+    return extractDavidResponse(data.result);
+  }
   if (data.text) return data.text;
   if (data.content) return data.content;
   return null;
@@ -162,11 +165,6 @@ const davidAi = {
     const url = `${DAVID_BASE}/ai/gpt3?text=${encodeURIComponent(text)}`;
     const data = await getWithRetry(url);
     return extractDavidResponse(data);
-  },
-  perplexity: async (text) => {
-    const url = `${DAVID_BASE}/ai/perplexity?text=${encodeURIComponent(text)}`;
-    const data = await getWithRetry(url);
-    return extractDavidResponse(data);
   }
 };
 
@@ -181,7 +179,6 @@ const gifted = {
 const ai = {
   chat: async (text) => {
     const models = [
-      { name: "david-perplexity", fn: () => davidAi.perplexity(text) },
       { name: "david-chatgpt", fn: () => davidAi.chatgpt(text) },
       { name: "david-gpt3", fn: () => davidAi.gpt3(text) },
       { name: "gifted-gpt4o", fn: () => gifted.gpt4o(text) }
@@ -190,7 +187,10 @@ const ai = {
     for (const model of models) {
       try {
         const result = await model.fn();
-        if (result && result.length > 5) return result;
+        if (result && result.length > 3 && !result.toLowerCase().includes("error")) {
+          console.log(`[ai] Success: ${model.name}`);
+          return result;
+        }
       } catch (err) {
         continue;
       }
@@ -199,4 +199,4 @@ const ai = {
   }
 };
 
-module.exports = { ai, downloads, sports, games, news, lyrics, stickers, davidAi };
+module.exports = { ai, downloads, sports, games, news, lyrics, stickers };
