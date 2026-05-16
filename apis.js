@@ -34,30 +34,140 @@ function extractResponse(data) {
   }
   if (data.text) return data.text;
   if (data.content) return data.content;
+  if (data.output) return data.output;
+  if (data.data) return extractResponse(data.data);
   return null;
 }
 
-// Fast AI
-const ai = {
-  // GPT-3 - fastest
+// ALL AI ENDPOINTS - DavidCyril
+const davidApi = {
+  // Main chat endpoint (new)
   chat: async (text) => {
+    const url = `${DAVID_BASE}/ai/chat?question=${encodeURIComponent(text)}`;
+    const data = await getFast(url);
+    return extractResponse(data);
+  },
+  
+  // GPT-3 - fastest
+  gpt3: async (text) => {
     const url = `${DAVID_BASE}/ai/gpt3?text=${encodeURIComponent(text)}`;
     const data = await getFast(url);
     return extractResponse(data);
   },
   
-  // ChatGPT fallback
-  chatGpt: async (text) => {
+  // ChatGPT with GPT-4o
+  chatgpt: async (text) => {
     const url = `${DAVID_BASE}/ai/chatgpt?prompt=${encodeURIComponent(text)}&model=gpt-4o`;
     const data = await getFast(url);
     return extractResponse(data);
   },
   
-  // Gifted fallback
-  chatGifted: async (text) => {
+  // DeepSeek LLM
+  deepseek: async (text) => {
+    const url = `${DAVID_BASE}/ai/deepseek-llm-67b-chat?text=${encodeURIComponent(text)}`;
+    const data = await getFast(url);
+    return extractResponse(data);
+  },
+  
+  // Public AI
+  publicAi: async (text) => {
+    const url = `${DAVID_BASE}/ai/public?question=${encodeURIComponent(text)}`;
+    const data = await getFast(url);
+    return extractResponse(data);
+  },
+  
+  // Perplexity (for detailed responses)
+  perplexity: async (text) => {
+    const url = `${DAVID_BASE}/ai/perplexity?text=${encodeURIComponent(text)}`;
+    const data = await getFast(url);
+    return extractResponse(data);
+  }
+};
+
+// ALL AI ENDPOINTS - Gifted
+const giftedApi = {
+  gpt4o: async (text) => {
     const url = `${GIFTED_BASE}/ai/gpt4o?apikey=${GIFTED_KEY}&q=${encodeURIComponent(text)}`;
     const data = await getFast(url);
     return data?.result || data?.response || extractResponse(data);
+  },
+  
+  gemini: async (text) => {
+    const url = `${GIFTED_BASE}/ai/gemini?apikey=${GIFTED_KEY}&q=${encodeURIComponent(text)}`;
+    const data = await getFast(url);
+    return data?.result || data?.response || extractResponse(data);
+  },
+  
+  deepseek: async (text) => {
+    const url = `${GIFTED_BASE}/ai/overchat?apikey=${GIFTED_KEY}&model=deepseek&q=${encodeURIComponent(text)}`;
+    const data = await getFast(url);
+    return data?.result || data?.response || extractResponse(data);
+  },
+  
+  llama: async (text) => {
+    const url = `${GIFTED_BASE}/ai/llama?apikey=${GIFTED_KEY}&q=${encodeURIComponent(text)}`;
+    const data = await getFast(url);
+    return data?.result || data?.response || extractResponse(data);
+  },
+  
+  mistral: async (text) => {
+    const url = `${GIFTED_BASE}/ai/mistral?apikey=${GIFTED_KEY}&q=${encodeURIComponent(text)}`;
+    const data = await getFast(url);
+    return data?.result || data?.response || extractResponse(data);
+  }
+};
+
+// Main AI with ALL endpoints (tried in order)
+const ai = {
+  // Primary: DavidCyril chat endpoint (fastest)
+  chat: async (text) => {
+    const url = `${DAVID_BASE}/ai/chat?question=${encodeURIComponent(text)}`;
+    const data = await getFast(url);
+    return extractResponse(data);
+  },
+  
+  // All DavidCyril endpoints
+  davidGpt3: async (text) => davidApi.gpt3(text),
+  davidChatgpt: async (text) => davidApi.chatgpt(text),
+  davidDeepseek: async (text) => davidApi.deepseek(text),
+  davidPublic: async (text) => davidApi.publicAi(text),
+  davidPerplexity: async (text) => davidApi.perplexity(text),
+  
+  // All Gifted endpoints
+  giftedGpt4o: async (text) => giftedApi.gpt4o(text),
+  giftedGemini: async (text) => giftedApi.gemini(text),
+  giftedDeepseek: async (text) => giftedApi.deepseek(text),
+  giftedLlama: async (text) => giftedApi.llama(text),
+  giftedMistral: async (text) => giftedApi.mistral(text),
+  
+  // Smart fallback - tries all APIs
+  smartChat: async (text) => {
+    const models = [
+      { name: "david-chat", fn: () => ai.chat(text) },
+      { name: "david-gpt3", fn: () => ai.davidGpt3(text) },
+      { name: "david-chatgpt", fn: () => ai.davidChatgpt(text) },
+      { name: "david-deepseek", fn: () => ai.davidDeepseek(text) },
+      { name: "david-public", fn: () => ai.davidPublic(text) },
+      { name: "david-perplexity", fn: () => ai.davidPerplexity(text) },
+      { name: "gifted-gpt4o", fn: () => ai.giftedGpt4o(text) },
+      { name: "gifted-gemini", fn: () => ai.giftedGemini(text) },
+      { name: "gifted-deepseek", fn: () => ai.giftedDeepseek(text) },
+      { name: "gifted-llama", fn: () => ai.giftedLlama(text) },
+      { name: "gifted-mistral", fn: () => ai.giftedMistral(text) }
+    ];
+    
+    for (const model of models) {
+      try {
+        const result = await model.fn();
+        if (result && result.length > 3 && !result.toLowerCase().includes("error")) {
+          console.log(`[ai] Success: ${model.name}`);
+          return result;
+        }
+      } catch (err) {
+        continue;
+      }
+    }
+    return null;
   }
 };
 
@@ -209,5 +319,7 @@ module.exports = {
   news, 
   lyrics, 
   stickers,
-  quotes
+  quotes,
+  davidApi,
+  giftedApi
 };
