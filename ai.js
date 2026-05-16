@@ -58,6 +58,8 @@ function stripAiTells(s) {
     /\bi am a (bot|chatbot)\b[^.!?]*[.!?]?/gi,
     /\bhow can i (assist|help) you( today)?\??/gi,
     /\bis there anything else( i can help with)?\??/gi,
+    /\bas a large language model\b[^.!?]*[.!?]?/gi,
+    /\bi don't have personal(ity)?\b[^.!?]*[.!?]?/gi,
   ];
   for (const re of banned) out = out.replace(re, "");
   // limit emojis
@@ -90,6 +92,42 @@ function buildContext(jid, userText) {
     .join("\n");
   const sys = buildSystemPrompt();
   return `${sys}\n\nConversation so far:\n${lines}\nUser: ${userText}\nMarisel:`;
+}
+
+// Quick offline responses
+function getQuickResponse(text) {
+  const lower = text.toLowerCase().trim();
+  
+  // Simple greetings - no API needed
+  const greetings = ["hi", "hello", "hey", "sasa", "niaje", "jambo", "mambo", "vipi", "habari"];
+  if (greetings.some(g => lower === g || lower.startsWith(g + " ") || lower.endsWith(" " + g) || lower.includes(g))) {
+    const responses = [
+      "Sasa! Niaje?",
+      "Yo! Mbok?",
+      "Mambo! Poa?",
+      "Vipi mkuu?",
+      "Poa, unaendelea aje?"
+    ];
+    return responses[Math.floor(Math.random() * responses.length)];
+  }
+  
+  // Help
+  if (lower.includes("help") || lower === "?" || lower === "commands" || lower.includes("unaweza")) {
+    return "Ninaweza:\n• Majibu ya kawaida\n• Download video (tuma link)\n• Generate image ('generate image of...')\n• EPL live scores na standings\n• Uliza tu!";
+  }
+  
+  // Thank you
+  if (lower.includes("thank") || lower.includes("asante") || lower.includes("thanks")) {
+    const responses = ["Karibu sana.", "Asante kwa kutumia Marisel!", "Karibu mkuu."];
+    return responses[Math.floor(Math.random() * responses.length)];
+  }
+  
+  // Who are you
+  if (lower.includes("who are you") || lower.includes("wewe ni nani")) {
+    return "Mi ni Marisel, mkenya chiller tu. Unataka nikusaidie aje?";
+  }
+  
+  return null;
 }
 
 // ----- Intent handlers -----
@@ -175,21 +213,45 @@ async function handleFootball(text) {
 
 async function handleChat(jid, text) {
   const prompt = buildContext(jid, text);
-  const model = (process.env.AI_MODEL || "gpt4o").toLowerCase();
+  
   try {
-    let data;
-    if (model === "gemini") data = await ai.gemini(prompt);
-    else if (model === "deepseek") data = await ai.deepseek(prompt);
-    else data = await ai.gpt4o(prompt);
-    const raw = extractText(data);
-    return stripAiTells(raw) || "Mmh.";
-  } catch {
-    return "Network imekuwa slow. Repeat?";
+    console.log(`[chat] Processing: ${text.substring(0, 50)}...`);
+    const response = await ai.chat(prompt);
+    const cleaned = stripAiTells(response);
+    
+    if (cleaned && cleaned.length > 5) {
+      return cleaned;
+    }
+    
+    // If response is too short or empty, try without context
+    const simpleResponse = await ai.chat(text);
+    const simpleCleaned = stripAiTells(simpleResponse);
+    if (simpleCleaned && simpleCleaned.length > 5) {
+      return simpleCleaned;
+    }
+    
+    return "Sielewi vizuri. Unaweza explain zaidi?";
+    
+  } catch (err) {
+    console.error("[chat] Error:", err.message);
+    
+    // Last resort fallbacks
+    const fallbacks = [
+      "Network imekuwa slow. Rudia message?",
+      "API imepumzika. Jaribu tena?",
+      "Signal haiko poa. Tuma tena?",
+      "Hehe, server imechoka. Rudia kidogo?"
+    ];
+    return fallbacks[Math.floor(Math.random() * fallbacks.length)];
   }
 }
 
 async function route(jid, text) {
   if (!text || !text.trim()) return null;
+
+  // Quick offline responses for common queries (no API call)
+  const quickResponse = getQuickResponse(text);
+  if (quickResponse) return quickResponse;
 
   // 1) download link
   if (URL_RE.test(text)) {
