@@ -1,7 +1,7 @@
 {
   "name": "marisel",
   "version": "1.0.0",
-  "description": "Marisel - WhatsApp AI agent",
+  "description": "Marisel - WhatsApp AI Assistant",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
