@@ -26,7 +26,8 @@ const logger = pino({ level: "warn" });
 const app = express();
 let connectionStatus = "starting";
 let currentQR = null;
-let qrResolvers = [];
+let sock = null;
+let reconnectAttempts = 0;
 
 // Serve HTML page with QR code
 app.get("/", (_req, res) => {
@@ -247,7 +248,7 @@ app.get("/qr/status", (_req, res) => {
   res.json({
     connected: connectionStatus === "open",
     qrPresent: !!currentQR,
-    qrChanged: false // For simplicity
+    qrChanged: false
   });
 });
 
@@ -255,13 +256,28 @@ app.get("/health", (_req, res) =>
   res.json({ status: "Marisel running", connection: connectionStatus })
 );
 
+// Test AI endpoint
+app.get("/test-ai", async (_req, res) => {
+  const { ai } = require("./apis");
+  const results = {};
+  
+  const testMessage = "Say 'API works' in 3 words";
+  
+  // Test main chat
+  try {
+    const result = await ai.chat(testMessage);
+    results.main = { success: true, response: result?.substring(0, 100) };
+  } catch (e) {
+    results.main = { success: false, error: e.message };
+  }
+  
+  res.json(results);
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`[http] listening on ${PORT}`));
 
 // ---------- WhatsApp ----------
-let sock = null;
-let reconnectAttempts = 0;
-
 function nextBackoff() {
   const steps = [5000, 10000, 20000, 40000, 60000];
   return steps[Math.min(reconnectAttempts, steps.length - 1)];
@@ -296,7 +312,10 @@ async function handleMessage(m) {
     if (!m.message) return;
     const jid = m.key.remoteJid;
     if (!jid) return;
+
+    // GROUPS: ignore completely
     if (jid.endsWith("@g.us")) return;
+    // status broadcast
     if (jid === "status@broadcast") return;
 
     const text = extractText(m).trim();
@@ -306,6 +325,7 @@ async function handleMessage(m) {
     const isFromOwner = m.key.fromMe || senderJid === OWNER_JID;
     const lower = text.toLowerCase().trim();
 
+    // --- Owner pause/resume (only owner, only affects current chat jid) ---
     if (isFromOwner && lower === "marisel pause") {
       db.pause(jid);
       await sock.sendMessage(jid, { text: "Paused" });
@@ -317,19 +337,25 @@ async function handleMessage(m) {
       return;
     }
 
+    // --- Training: owner messaging own number (note to self) ---
     if (m.key.fromMe && jid === OWNER_JID) {
       db.addPersona(text);
       await sock.sendMessage(jid, { text: "Learned" });
       return;
     }
 
+    // Ignore other fromMe messages (owner talking to others manually)
     if (m.key.fromMe) return;
+
+    // If this chat is paused -> total silence
     if (db.isPaused(jid)) return;
 
+    // store user message + upsert user
     const pushName = m.pushName || "";
     db.upsertUser(jid, pushName);
     db.addMsg(jid, "user", text);
 
+    // typing indicator
     try {
       await sock.sendPresenceUpdate("composing", jid);
     } catch {}
@@ -364,7 +390,7 @@ async function start() {
     version,
     logger,
     auth: state,
-    printQRInTerminal: false, // Don't print QR in terminal
+    printQRInTerminal: false,
     browser: ["Marisel", "Chrome", "1.0"],
     markOnlineOnConnect: false,
     syncFullHistory: false,
@@ -377,47 +403,8 @@ async function start() {
     if (qr) {
       currentQR = qr;
       connectionStatus = "qr";
-      console.log("[wa] QR code generated — view at http://localhost:" + PORT);
+      console.log("[wa] QR code generated — view at https://your-app-url");
     }
     if (connection === "open") {
       connectionStatus = "open";
-      currentQR = null;
-      reconnectAttempts = 0;
-      console.log("[wa] connected as", sock.user?.id);
-    }
-    if (connection === "close") {
-      connectionStatus = "closed";
-      const code = lastDisconnect?.error?.output?.statusCode;
-      const loggedOut = code === DisconnectReason.loggedOut;
-      console.log("[wa] disconnected", code, loggedOut ? "(logged out)" : "");
-      if (loggedOut) {
-        try {
-          fs.rmSync(AUTH_DIR, { recursive: true, force: true });
-          fs.mkdirSync(AUTH_DIR, { recursive: true });
-        } catch {}
-      }
-      const wait = nextBackoff();
-      reconnectAttempts++;
-      console.log(`[wa] reconnecting in ${wait}ms`);
-      setTimeout(() => start().catch((e) => console.error(e)), wait);
-    }
-  });
-
-  sock.ev.on("messages.upsert", async ({ messages, type }) => {
-    if (type !== "notify") return;
-    for (const m of messages) {
-      handleMessage(m);
-    }
-  });
-}
-
-// Live football monitor
-footballMonitor.start(sendToOwner);
-
-start().catch((e) => {
-  console.error("[boot]", e);
-  setTimeout(() => start().catch(() => {}), 5000);
-});
-
-process.on("unhandledRejection", (e) => console.error("[unhandled]", e));
-process.on("uncaughtException", (e) => console.error("[uncaught]", e));
+      currentQR = null
