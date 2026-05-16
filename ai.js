@@ -1,52 +1,11 @@
-const { ai, football, dl, tools } = require("./apis");
+const { ai, downloads, sports, games, news, lyrics, stickers } = require("./apis");
 const db = require("./db");
 
 const MAX_EMOJIS = parseInt(process.env.MAX_EMOJIS_PER_MESSAGE || "1", 10);
-
 const URL_RE = /(https?:\/\/[^\s]+)/i;
 
-function detectPlatform(url) {
-  const u = url.toLowerCase();
-  if (u.includes("youtube.com") || u.includes("youtu.be")) return "youtube";
-  if (u.includes("tiktok.com")) return "tiktok";
-  if (u.includes("instagram.com")) return "instagram";
-  if (u.includes("twitter.com") || u.includes("x.com")) return "twitter";
-  if (u.includes("spotify.com")) return "spotify";
-  return "aio";
-}
-
-function extractDownloadLink(data) {
-  if (!data) return null;
-  if (typeof data === "string" && data.startsWith("http")) return data;
-  const r = data.result || data.data || data;
-  if (typeof r === "string" && r.startsWith("http")) return r;
-  if (r?.url) return r.url;
-  if (r?.download_url) return r.download_url;
-  if (r?.video) return r.video;
-  if (r?.audio) return r.audio;
-  if (Array.isArray(r?.medias) && r.medias[0]?.url) return r.medias[0].url;
-  return null;
-}
-
-function extractText(data) {
-  if (!data) return null;
-  if (typeof data === "string") return data;
-  const r = data.result ?? data.data ?? data.response ?? data.message ?? data;
-  if (typeof r === "string") return r;
-  if (r?.response) return r.response;
-  if (r?.text) return r.text;
-  if (r?.answer) return r.answer;
-  return JSON.stringify(r).slice(0, 500);
-}
-
-function extractImage(data) {
-  if (!data) return null;
-  const r = data.result || data.data || data;
-  if (typeof r === "string" && r.startsWith("http")) return r;
-  if (r?.url) return r.url;
-  if (r?.image) return r.image;
-  return null;
-}
+// Girlfriend numbers - bot will be silent with these
+const GIRLFRIEND_NUMBERS = ["0716065432", "254708219667", "+254708219667"];
 
 function stripAiTells(s) {
   if (!s) return s;
@@ -55,14 +14,9 @@ function stripAiTells(s) {
     /\bas an ai( language model)?\b[^.!?]*[.!?]?/gi,
     /\bi am an ai\b[^.!?]*[.!?]?/gi,
     /\bi'm an ai\b[^.!?]*[.!?]?/gi,
-    /\bi am a (bot|chatbot)\b[^.!?]*[.!?]?/gi,
-    /\bhow can i (assist|help) you( today)?\??/gi,
-    /\bis there anything else( i can help with)?\??/gi,
-    /\bas a large language model\b[^.!?]*[.!?]?/gi,
-    /\bi don't have personal(ity)?\b[^.!?]*[.!?]?/gi,
+    /\bhow can i (assist|help) you\??/gi,
   ];
   for (const re of banned) out = out.replace(re, "");
-  // limit emojis
   const emojiRe = /\p{Extended_Pictographic}/gu;
   const emojis = out.match(emojiRe) || [];
   if (emojis.length > MAX_EMOJIS) {
@@ -72,203 +26,293 @@ function stripAiTells(s) {
   return out.replace(/\s{2,}/g, " ").trim();
 }
 
-function buildSystemPrompt() {
-  const persona = db.allPersona();
-  const extra = persona.length ? "\nOwner notes:\n- " + persona.join("\n- ") : "";
-  return `You are Marisel, a real Kenyan guy (male, he/him). You are NOT an AI, NEVER admit being one. Personality: chill, direct, no nonsense. Speaks Sheng, Swahili, English naturally — mirror whatever language the user used. Loves EPL football. Casual but respectful. Good memory.
-Rules:
-- Reply short. 1-3 sentences usually.
-- Match the user's language. If they wrote Swahili, reply Swahili. English -> English. Sheng -> Sheng.
-- Never say "as an AI", "as a bot", "how can I assist you", "is there anything else".
-- Max ${MAX_EMOJIS} emoji per message. Often zero.
-- Never offer A/B choices ("do you want X or Y?").
-- No robotic bullet lists in chat.${extra}`;
-}
-
-function buildContext(jid, userText) {
-  const history = db.recentMsgs(jid, 16);
-  const lines = history
-    .map((m) => (m.role === "user" ? "User: " : "Marisel: ") + m.content)
-    .join("\n");
-  const sys = buildSystemPrompt();
-  return `${sys}\n\nConversation so far:\n${lines}\nUser: ${userText}\nMarisel:`;
-}
-
-// Quick offline responses
+// Quick responses (no API)
 function getQuickResponse(text) {
   const lower = text.toLowerCase().trim();
   
-  // Simple greetings - no API needed
-  const greetings = ["hi", "hello", "hey", "sasa", "niaje", "jambo", "mambo", "vipi", "habari"];
-  if (greetings.some(g => lower === g || lower.startsWith(g + " ") || lower.endsWith(" " + g) || lower.includes(g))) {
-    const responses = [
-      "Sasa! Niaje?",
-      "Yo! Mbok?",
-      "Mambo! Poa?",
-      "Vipi mkuu?",
-      "Poa, unaendelea aje?"
-    ];
-    return responses[Math.floor(Math.random() * responses.length)];
+  const shortResponses = ["mmmh", "sema na citizen", "vipi", "kiac", "yo", "hehe", "sawa"];
+  
+  if (lower.length < 5) {
+    return shortResponses[Math.floor(Math.random() * shortResponses.length)];
   }
   
-  // Help
-  if (lower.includes("help") || lower === "?" || lower === "commands" || lower.includes("unaweza")) {
-    return "Ninaweza:\n• Majibu ya kawaida\n• Download video (tuma link)\n• Generate image ('generate image of...')\n• EPL live scores na standings\n• Uliza tu!";
+  if (lower.includes("thanks") || lower.includes("asante")) {
+    return "Karibu.";
   }
   
-  // Thank you
-  if (lower.includes("thank") || lower.includes("asante") || lower.includes("thanks")) {
-    const responses = ["Karibu sana.", "Asante kwa kutumia Marisel!", "Karibu mkuu."];
-    return responses[Math.floor(Math.random() * responses.length)];
-  }
-  
-  // Who are you
-  if (lower.includes("who are you") || lower.includes("wewe ni nani")) {
-    return "Mi ni Marisel, mkenya chiller tu. Unataka nikusaidie aje?";
+  if (lower === "?" || lower === "??") {
+    return "sema tu";
   }
   
   return null;
 }
 
-// ----- Intent handlers -----
+// Handle games
+async function handleGame(text) {
+  const lower = text.toLowerCase();
+  
+  if (lower.includes("dice") || lower.includes("roll")) {
+    const sidesMatch = lower.match(/sides?[=:]\s*(\d+)/i) || lower.match(/(\d+)\s*sides?/i);
+    const sides = sidesMatch ? parseInt(sidesMatch[1]) : 6;
+    const result = await games.rollDice(sides, 1);
+    const value = result.result || result.value || result;
+    return `🎲 Rolled ${value}`;
+  }
+  
+  if (lower.includes("coin") || lower.includes("flip")) {
+    const result = await games.flipCoin();
+    const value = result.result || result;
+    return `🪙 ${value}`;
+  }
+  
+  if (lower.includes("trivia")) {
+    const result = await games.trivia();
+    if (result.results && result.results[0]) {
+      const q = result.results[0];
+      return `📚 ${q.question}\nAnswer: ${q.correct_answer}`;
+    }
+    return `🎯 ${result.question || result.result || result}`;
+  }
+  
+  if (lower.includes("joke")) {
+    const result = await games.joke();
+    if (result.joke) return `😂 ${result.joke}`;
+    if (result.setup) return `😂 ${result.setup}\n${result.delivery || ""}`;
+    return `😂 ${result.result || result}`;
+  }
+  
+  if (lower.includes("truth")) {
+    const result = await games.truth();
+    return `💀 ${result.question || result.result || result}`;
+  }
+  
+  if (lower.includes("dare")) {
+    const result = await games.dare();
+    return `😈 ${result.challenge || result.result || result}`;
+  }
+  
+  if (lower.includes("8ball") || lower.includes("magic")) {
+    const question = text.replace(/8ball|magic 8|8 ball/i, "").trim();
+    const result = await games.eightBall(question || "Will I be successful?");
+    return `🔮 ${result.answer || result.result || result}`;
+  }
+  
+  if (lower.includes("rock") || lower.includes("paper") || lower.includes("scissors")) {
+    let choice = "rock";
+    if (lower.includes("paper")) choice = "paper";
+    if (lower.includes("scissors")) choice = "scissors";
+    const result = await games.rps(choice);
+    const computer = result.computer || result.opponent;
+    const winner = result.result || result.winner;
+    return `✊ ${choice} vs ${computer}\n${winner}`;
+  }
+  
+  return null;
+}
 
+// Handle sports
+async function handleSports(text) {
+  const lower = text.toLowerCase();
+  
+  if (lower.includes("live score") || lower.includes("scores")) {
+    const result = await sports.liveScores();
+    if (Array.isArray(result) && result.length) {
+      return result.slice(0, 5).map(m => `${m.home || m.homeTeam} ${m.homeScore || 0} - ${m.awayScore || 0} ${m.away || m.awayTeam}`).join("\n");
+    }
+    return "No live scores currently";
+  }
+  
+  if (lower.includes("standings") || lower.includes("table")) {
+    const result = await sports.soccerStandings();
+    if (Array.isArray(result) && result.length) {
+      return result.slice(0, 10).map((t, i) => `${i+1}. ${t.name || t.team} - ${t.points || 0}pts`).join("\n");
+    }
+    return "Standings not available";
+  }
+  
+  if (lower.includes("player")) {
+    const match = text.match(/player\s+(.+)/i);
+    if (match) {
+      const result = await sports.playerSearch(match[1]);
+      return `👤 ${JSON.stringify(result).substring(0, 200)}`;
+    }
+  }
+  
+  if (lower.includes("team")) {
+    const match = text.match(/team\s+(.+)/i);
+    if (match) {
+      const result = await sports.teamSearch(match[1]);
+      return `⚽ ${JSON.stringify(result).substring(0, 200)}`;
+    }
+  }
+  
+  if (lower.includes("highlights")) {
+    const result = await sports.sportsHighlights();
+    return `🎥 ${JSON.stringify(result).substring(0, 200)}`;
+  }
+  
+  return null;
+}
+
+// Handle downloads
 async function handleDownload(text) {
-  const m = text.match(URL_RE);
-  if (!m) return null;
-  const url = m[1];
-  const platform = detectPlatform(url);
-  try {
-    const fn = dl[platform] || dl.aio;
-    const data = await fn(url);
-    const link = extractDownloadLink(data);
-    if (link) return `Download ready: ${link}`;
-    return "Imeshindwa kupata link. Jaribu tena.";
-  } catch (e) {
-    return "Download imefeli. Link inaweza kuwa private au imeexpire.";
-  }
-}
-
-async function handleImageGen(text) {
-  const m = text.match(/^(?:generate|create|make|draw|tengeneza|nipe)\s+(?:an?\s+)?(?:image|picha|photo)\s+(?:of\s+)?(.+)/i);
-  if (!m) return null;
-  const prompt = m[1].trim();
-  try {
-    const data = await tools.genImage(prompt);
-    const img = extractImage(data);
-    return img ? { image: img, caption: prompt } : "Imeshindikana kugenerate.";
-  } catch {
-    return "Image gen imefeli.";
-  }
-}
-
-function isFootballQuery(t) {
-  const s = t.toLowerCase();
-  return /\b(epl|premier league|standings|table|live ?score|scores|fixture|football|mpira|kombe|arsenal|chelsea|liverpool|man united|man city|tottenham|spurs|ronaldo|messi|saka|haaland)\b/.test(
-    s
-  );
-}
-
-async function handleFootball(text) {
-  const t = text.toLowerCase();
-  try {
-    if (/\b(standing|table|log)\b/.test(t)) {
-      const d = await football.eplStandings();
-      const r = d.result || d.data || d;
-      if (Array.isArray(r)) {
-        const top = r.slice(0, 10).map((x, i) =>
-          `${i + 1}. ${x.team || x.name} - ${x.points ?? x.pts ?? ""}pts`
-        );
-        return "EPL Top 10:\n" + top.join("\n");
-      }
-      return extractText(d);
-    }
-    if (/\b(news|habari)\b/.test(t)) {
-      const d = await football.news();
-      const r = d.result || d.data || d;
-      if (Array.isArray(r)) return r.slice(0, 5).map((x) => `• ${x.title || x.headline}`).join("\n");
-      return extractText(d);
-    }
-    if (/\b(live ?score|scores|live)\b/.test(t)) {
-      const d = await football.livescore();
-      const r = d.result || d.data || d;
-      if (Array.isArray(r) && r.length) {
-        return r
-          .slice(0, 8)
-          .map((m) => `${m.home || m.homeTeam} ${m.homeScore ?? m.home_score ?? 0} - ${m.awayScore ?? m.away_score ?? 0} ${m.away || m.awayTeam}`)
-          .join("\n");
-      }
-      return "Hakuna match live sasa.";
-    }
-    const teamMatch = t.match(/\b(arsenal|chelsea|liverpool|man united|man city|tottenham|spurs|barcelona|real madrid)\b/);
-    if (teamMatch) {
-      const d = await football.team(teamMatch[1]);
-      return extractText(d).slice(0, 400);
-    }
-    const d = await football.livescore();
-    return extractText(d).slice(0, 400);
-  } catch {
-    return "Football API ime-fail kidogo. Jaribu tena baadaye.";
-  }
-}
-
-async function handleChat(jid, text) {
-  const prompt = buildContext(jid, text);
+  const urlMatch = text.match(URL_RE);
+  if (!urlMatch) return null;
+  const url = urlMatch[1];
+  const lower = text.toLowerCase();
   
   try {
-    console.log(`[chat] Processing: ${text.substring(0, 50)}...`);
-    const response = await ai.chat(prompt);
-    const cleaned = stripAiTells(response);
-    
-    if (cleaned && cleaned.length > 5) {
-      return cleaned;
+    if (lower.includes("mp3") || lower.includes("audio")) {
+      const result = await downloads.youtubeMp3(url);
+      const link = result.downloadUrl || result.url || result.result;
+      if (link) return `🎵 Download: ${link}`;
     }
     
-    // If response is too short or empty, try without context
-    const simpleResponse = await ai.chat(text);
-    const simpleCleaned = stripAiTells(simpleResponse);
-    if (simpleCleaned && simpleCleaned.length > 5) {
-      return simpleCleaned;
+    if (lower.includes("instagram") || url.includes("instagram.com")) {
+      const result = await downloads.instagram(url);
+      const link = result.downloadUrl || result.url || result.result;
+      if (link) return `📸 ${link}`;
     }
     
-    return "Sielewi vizuri. Unaweza explain zaidi?";
+    if (lower.includes("facebook") || url.includes("facebook.com")) {
+      const result = await downloads.facebook(url);
+      const link = result.downloadUrl || result.url || result.result;
+      if (link) return `📘 ${link}`;
+    }
     
+    return "Send Instagram/Facebook/YouTube link";
   } catch (err) {
-    console.error("[chat] Error:", err.message);
-    
-    // Last resort fallbacks
-    const fallbacks = [
-      "Network imekuwa slow. Rudia message?",
-      "API imepumzika. Jaribu tena?",
-      "Signal haiko poa. Tuma tena?",
-      "Hehe, server imechoka. Rudia kidogo?"
-    ];
+    return "Download failed. Try again.";
+  }
+}
+
+// Handle news
+async function handleNews(text) {
+  const lower = text.toLowerCase();
+  
+  if (lower.includes("trending")) {
+    const result = await news.trending();
+    if (Array.isArray(result) && result.length) {
+      return result.slice(0, 5).map(n => `📰 ${n.title || n.headline}`).join("\n");
+    }
+    return "No trending news";
+  }
+  
+  if (lower.includes("bbc")) {
+    const result = await news.bbc();
+    if (Array.isArray(result) && result.length) {
+      return result.slice(0, 5).map(n => `📺 ${n.title || n.headline}`).join("\n");
+    }
+    return "BBC news not available";
+  }
+  
+  return null;
+}
+
+// Handle lyrics
+async function handleLyrics(text) {
+  const lower = text.toLowerCase();
+  
+  if (lower.includes("lyrics")) {
+    const match = text.match(/lyrics\s+(.+?)(?:\s+by\s+|\s+-\s+)(.+)/i) ||
+                  text.match(/"(.+?)"\s+lyrics/i) ||
+                  text.match(/(.+?)\s+lyrics/i);
+    if (match) {
+      const title = match[1].trim();
+      const artist = match[2] || "";
+      const result = await lyrics.search(title, artist);
+      if (result.lyrics) {
+        const lyricsText = result.lyrics.substring(0, 800);
+        return `🎵 ${title}\n\n${lyricsText}`;
+      }
+      return "Lyrics not found";
+    }
+  }
+  return null;
+}
+
+// Handle stickers
+async function handleSticker(text) {
+  const lower = text.toLowerCase();
+  
+  if (lower.includes("sticker")) {
+    const match = text.match(/sticker\s+(.+)/i);
+    if (match) {
+      const result = await stickers.search(match[1]);
+      if (result.stickers && result.stickers[0]?.url) {
+        return { sticker: result.stickers[0].url };
+      }
+      if (result.results && result.results[0]?.url) {
+        return { sticker: result.results[0].url };
+      }
+    }
+  }
+  return null;
+}
+
+// Main chat handler
+async function handleChat(text) {
+  // Try quick response first
+  const quick = getQuickResponse(text);
+  if (quick) return quick;
+  
+  // Try game handlers
+  try {
+    const gameResult = await handleGame(text);
+    if (gameResult) return gameResult;
+  } catch (err) {}
+  
+  // Try sports handlers
+  try {
+    const sportsResult = await handleSports(text);
+    if (sportsResult) return sportsResult;
+  } catch (err) {}
+  
+  // Try download handlers
+  try {
+    const downloadResult = await handleDownload(text);
+    if (downloadResult && typeof downloadResult === 'string') return downloadResult;
+  } catch (err) {}
+  
+  // Try news handlers
+  try {
+    const newsResult = await handleNews(text);
+    if (newsResult) return newsResult;
+  } catch (err) {}
+  
+  // Try lyrics handlers
+  try {
+    const lyricsResult = await handleLyrics(text);
+    if (lyricsResult) return lyricsResult;
+  } catch (err) {}
+  
+  // Try sticker handlers
+  try {
+    const stickerResult = await handleSticker(text);
+    if (stickerResult && stickerResult.sticker) return stickerResult;
+  } catch (err) {}
+  
+  // Default AI chat
+  try {
+    const response = await ai.chat(text);
+    return stripAiTells(response) || "Hehe, sawa.";
+  } catch (err) {
+    const fallbacks = ["Network slow", "Try again", "Sema tena"];
     return fallbacks[Math.floor(Math.random() * fallbacks.length)];
   }
 }
 
-async function route(jid, text) {
-  if (!text || !text.trim()) return null;
-
-  // Quick offline responses for common queries (no API call)
-  const quickResponse = getQuickResponse(text);
-  if (quickResponse) return quickResponse;
-
-  // 1) download link
-  if (URL_RE.test(text)) {
-    const r = await handleDownload(text);
-    if (r) return r;
+async function route(jid, text, isStatus = false) {
+  if (!text && !isStatus) return null;
+  
+  // Check if this is a girlfriend number - stay silent
+  const isGirlfriend = GIRLFRIEND_NUMBERS.some(num => jid.includes(num));
+  if (isGirlfriend) {
+    console.log(`[route] Silent mode: Not replying to girlfriend number`);
+    return null;
   }
-  // 2) image gen
-  const img = await handleImageGen(text);
-  if (img) return img;
-
-  // 3) football
-  if (isFootballQuery(text)) {
-    return await handleFootball(text);
-  }
-
-  // 4) default chat
-  return await handleChat(jid, text);
+  
+  return await handleChat(text);
 }
 
 module.exports = { route, stripAiTells };
