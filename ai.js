@@ -1,7 +1,7 @@
 // Marisel brain v3: Grok-powered, persistent memory, custom rules, games, stickers, style few-shots
 const fs = require("fs");
 const path = require("path");
-const { downloads, music, imageGen, sports } = require("./apis");
+const { downloads, music, imageGen, sports, ai: fallbackAi } = require("./apis");
 const db = require("./db");
 const xai = require("./xai");
 const games = require("./games");
@@ -228,6 +228,16 @@ async function route(jid, text, isOwner = false, _lang = "english", pushName = "
 
   const reply = await grokReply(jid, text);
   if (reply && reply.length > 1) return reply;
+
+  // Grok failed — fall back to the free AI chain in apis.js so the bot still replies
+  try {
+    const alt = await fallbackAi.smartChat(text);
+    const cleaned = stripAiTells(alt);
+    if (cleaned && cleaned.length > 1) return cleaned;
+  } catch (e) {
+    console.error("[fallback-ai]", e.message);
+  }
+
   return "hmm, say that again?";
 }
 
