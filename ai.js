@@ -1,4 +1,4 @@
-const { ai, downloads, music, imageGen, sports, games, news, quotes } = require("./apis");
+const { ai, downloads, music, imageGen, sports, games, news, quotes, davidApi } = require("./apis");
 const db = require("./db");
 
 const URL_RE = /(https?:\/\/[^\s]+)/i;
@@ -10,13 +10,30 @@ const GIRLFRIEND_NUMBERS = ["254716065432", "+254716065432", "0716065432", "2547
 // Stop reply cache
 const stopReplyCache = new Map();
 
-// Detect language
+// Force English mode - user said they don't understand Swahili
+let forceEnglish = false;
+
+// Detect language - ONLY use Swahili if user used Swahili AND never forced English
 function detectLanguage(text, lastWasSwahili = false) {
-  const swahiliWords = ['sasa', 'vipi', 'niaje', 'habari', 'asante', 'sawa', 'poa', 'mambo', 'nzuri', 'karibu', 'sema', 'niambie', 'rada', 'alaf', 'ssup', 'kiac', 'hehe'];
+  // If user explicitly said they don't understand Swahili, force English
+  const lowerText = text.toLowerCase();
+  if (lowerText.includes("don't understand swahili") || lowerText.includes("not understand swahili") || lowerText === "i don't understand swahili") {
+    forceEnglish = true;
+    return "english";
+  }
+  
+  // If forceEnglish is true, always return English
+  if (forceEnglish) return "english";
+  
+  const swahiliWords = ['sasa', 'vipi', 'niaje', 'habari', 'asante', 'sawa', 'poa', 'mambo', 'nzuri', 'karibu', 'sema', 'niambie', 'rada', 'alaf', 'ssup', 'kiac', 'hehe', 'bana', 'fiti', 'fresh'];
+  
   const lower = text.toLowerCase();
   for (const word of swahiliWords) {
-    if (lower.includes(word)) return "swahili";
+    if (lower === word || lower.startsWith(word + " ") || lower.endsWith(" " + word) || lower.includes(" " + word + " ")) {
+      return "swahili";
+    }
   }
+  
   if (lastWasSwahili) return "swahili";
   return "english";
 }
@@ -39,7 +56,7 @@ function shouldReply(jid) {
   return true;
 }
 
-// Build prompt with persona
+// Build prompt with persona - FORCE ENGLISH if needed
 function buildPrompt(userText, history, language) {
   const persona = db.allPersona();
   const personaText = persona.length ? `\nPersonality notes: ${persona.join(". ")}` : "";
@@ -48,65 +65,176 @@ function buildPrompt(userText, history, language) {
     `${m.role === "user" ? "User" : "Marisel"}: ${m.content}`
   ).join("\n");
   
-  if (language === "swahili") {
-    return `Wewe ni Marisel, Mkenya. Jibu fupi sana.${personaText}
+  // ALWAYS use English if forceEnglish is true OR language is english
+  const useEnglish = forceEnglish || language !== "swahili";
+  
+  if (useEnglish) {
+    return `You are Marisel, a Kenyan guy. Reply ONLY in English. Never use Swahili words. Never say "as an AI" or "how can I help" or "niambie". Reply directly and naturally.
+
+IMPORTANT: Give accurate, up-to-date information. For sports results, news, or current events, use your knowledge.
+
+${personaText}
+
+History:
+${hist}
+
+User: ${userText}
+Marisel (short English reply):`;
+  } else {
+    return `Wewe ni Marisel, Mkenya. Jibu fupi kwa Kiswahili.${personaText}
 
 Historia:
 ${hist}
 
 User: ${userText}
 Marisel:`;
-  } else {
-    return `You are Marisel, a Kenyan guy. Reply very short. Never say "as an AI" or "how can I help". Say "niambie" instead.${personaText}
-
-History:
-${hist}
-
-User: ${userText}
-Marisel:`;
   }
 }
 
-// Clean response
+// Clean response - remove AI talk and "niambie" spam
 function cleanResponse(text, language) {
   if (!text) return null;
   
   let cleaned = text;
   
+  // Remove AI phrases
   const removePatterns = [
     /I am (an|an AI|Perplexity|ChatGPT|assistant|bot|language model)/gi,
     /I'm (an|an AI|assistant|bot)/gi, /as an AI/gi, /How can I help/gi,
     /What can I help/gi, /Is there anything/gi, /Feel free/gi,
+    /I'd be happy/gi, /Let me know/gi, /you can ask me/gi, /I'm here to/gi,
   ];
   for (const re of removePatterns) cleaned = cleaned.replace(re, "");
   
-  cleaned = cleaned.replace(/How can I (help|assist) you/gi, "Niambie");
+  // Remove excessive "niambie" - only keep if it's the ONLY word
+  if (cleaned.toLowerCase().includes("niambie") && cleaned.length > 10) {
+    cleaned = cleaned.replace(/niambie/gi, "");
+  }
   
+  // If response is just "Niambie" or similar, replace with something better
+  const justNiambie = /^(niambie|what do you want to know|say|tell me|how can i)/i.test(cleaned.trim());
+  if (justNiambie && cleaned.length < 30) {
+    return "I'm not sure. Can you rephrase?";
+  }
+  
+  // Keep only 1-2 sentences
   const sentences = cleaned.match(/[^.!?]+[.!?]+/g) || [cleaned];
   if (sentences.length > 2) cleaned = sentences.slice(0, 2).join(" ");
-  if (cleaned.length > 150) cleaned = cleaned.substring(0, 150);
+  if (cleaned.length > 200) cleaned = cleaned.substring(0, 200);
   
   cleaned = cleaned.trim();
+  
+  // Final fallback
   if (!cleaned || cleaned.length < 2) {
-    const fallbacks = language === "swahili" ? ["Sawa", "Hehe", "Mmmh", "Vipi"] : ["Ok", "Cool", "Nice", "Got it"];
+    const fallbacks = ["Ok", "Cool", "Nice", "Got it", "I see"];
     return fallbacks[Math.floor(Math.random() * fallbacks.length)];
   }
+  
   return cleaned;
 }
 
-// Quick replies
+// Quick replies - ENGLISH ONLY unless Swahili forced
 function quickReply(text, language) {
   const lower = text.toLowerCase().trim();
   
-  if (lower === "hello" || lower === "hi" || lower === "hey") {
-    return language === "swahili" ? "Sasa" : "Hey";
+  // If user said they don't understand Swahili, force English replies
+  if (lower.includes("don't understand swahili") || lower.includes("not understand swahili")) {
+    return "Got it! I'll only use English from now on.";
   }
-  if (lower === "hallo") return language === "swahili" ? "Sasa" : "Hey";
-  if (lower === "sasa" || lower === "vipi" || lower === "niaje") return "Poa";
-  if (lower === "habari") return "Nzuri";
-  if (lower.includes("thank") || lower === "asante") return language === "swahili" ? "Karibu" : "Welcome";
-  if (lower.includes("who are you") || lower === "wewe ni nani") return language === "swahili" ? "Mi ni Marisel" : "I'm Marisel";
-  if (lower.includes("what's up") || lower === "sup" || lower === "ssup") return "Not much. You?";
+  
+  // English greetings
+  if (lower === "hello" || lower === "hi" || lower === "hey" || lower === "hallo") {
+    return "Hey";
+  }
+  
+  if (lower === "how are you" || lower === "how are you doing") {
+    return "I'm good, thanks! You?";
+  }
+  
+  if (lower === "what's up" || lower === "sup" || lower === "ssup") {
+    return "Not much. What about you?";
+  }
+  
+  // Thank you
+  if (lower.includes("thank") || lower === "thanks") {
+    return "You're welcome!";
+  }
+  
+  // Who are you
+  if (lower.includes("who are you") || lower === "what's your name") {
+    return "I'm Marisel. Nice to meet you!";
+  }
+  
+  // Swahili greetings (only if user used Swahili)
+  if (language === "swahili") {
+    if (lower === "sasa" || lower === "vipi" || lower === "niaje") return "Poa";
+    if (lower === "habari") return "Nzuri";
+    if (lower === "asante") return "Karibu";
+  }
+  
+  return null;
+}
+
+// Use Perplexity for accurate, up-to-date information (sports, news, current events)
+async function getAccurateInfo(question) {
+  try {
+    // Use Perplexity API for current/accurate info
+    const result = await davidApi.perplexity(question);
+    if (result && result.length > 5) {
+      // Clean the response - remove Perplexity's self-intro
+      let cleaned = result;
+      const removePhrases = [
+        /I am (Perplexity|an AI|an AI assistant)/gi,
+        /According to my knowledge/gi,
+        /Based on my search/gi,
+        /I found that/gi,
+      ];
+      for (const phrase of removePhrases) {
+        cleaned = cleaned.replace(phrase, "");
+      }
+      return cleaned.trim();
+    }
+  } catch (err) {
+    console.log("[perplexity] Error:", err.message);
+  }
+  return null;
+}
+
+// Handle football/sports questions specifically
+async function handleFootballQuestion(text) {
+  const lower = text.toLowerCase();
+  
+  // Detect football-related questions
+  const footballKeywords = ['manchester city', 'man city', 'city', 'arsenal', 'chelsea', 'liverpool', 'united', 'man united', 'epl', 'premier league', 'fa cup', 'champions league', 'ucl', 'uefa', 'match', 'game', 'score', 'won', 'lost', 'played against', 'fixture', 'result'];
+  
+  const isFootball = footballKeywords.some(k => lower.includes(k));
+  if (!isFootball) return null;
+  
+  // Use Perplexity for accurate football info
+  const accurateAnswer = await getAccurateInfo(text);
+  if (accurateAnswer) {
+    // Keep it short
+    const shortAnswer = accurateAnswer.split(/[.!?]/)[0] + ".";
+    return shortAnswer;
+  }
+  
+  return null;
+}
+
+// Handle current events/news
+async function handleCurrentEvents(text) {
+  const lower = text.toLowerCase();
+  
+  const currentKeywords = ['news', 'today', 'latest', 'current', 'yesterday', 'last night', 'this week', 'happened', 'going on', 'update'];
+  const isCurrent = currentKeywords.some(k => lower.includes(k));
+  
+  if (isCurrent) {
+    const accurateAnswer = await getAccurateInfo(text);
+    if (accurateAnswer) {
+      const shortAnswer = accurateAnswer.split(/[.!?]/)[0] + ".";
+      return shortAnswer;
+    }
+  }
   return null;
 }
 
@@ -156,17 +284,6 @@ async function handleImageGen(text) {
   return null;
 }
 
-// Handle image edit
-async function handleImageEdit(text) {
-  const urlMatch = text.match(URL_RE);
-  if (!urlMatch) return null;
-  const promptMatch = text.match(/(?:edit|change|make)\s+(.+)/i);
-  if (!promptMatch) return null;
-  const editedUrl = await imageGen.nanobanana2(urlMatch[1], promptMatch[1]);
-  if (editedUrl) return { image: editedUrl, caption: "Done" };
-  return null;
-}
-
 // Games list
 const GAMES_LIST = [
   { name: "20 Questions", cmd: "20q" },
@@ -195,25 +312,7 @@ function handleGameCommand(text) {
   return null;
 }
 
-// Handle current info with Perplexity
-async function handleCurrentInfo(text, language) {
-  const lower = text.toLowerCase();
-  const currentKeywords = ['news', 'today', 'latest', 'current', 'score', 'match', 'weather'];
-  if (!currentKeywords.some(k => lower.includes(k))) return null;
-  
-  try {
-    const result = await davidApi.perplexity(text);
-    if (result) {
-      const firstSentence = result.split(/[.!?]/)[0];
-      return firstSentence.substring(0, 150);
-    }
-  } catch (err) {
-    return null;
-  }
-  return null;
-}
-
-// Handle sports
+// Handle sports scores
 async function handleSports(text, language) {
   const lower = text.toLowerCase();
   
@@ -223,14 +322,14 @@ async function handleSports(text, language) {
       if (Array.isArray(result) && result.length) {
         return result.slice(0, 5).map(m => `${m.home} ${m.homeScore}-${m.awayScore} ${m.away}`).join("\n");
       }
-      return language === "swahili" ? "Hakuna live scores" : "No live scores";
+      return null;
     }
     if (lower.includes("standings") || lower.includes("table")) {
       const result = await sports.soccerStandings();
       if (Array.isArray(result) && result.length) {
         return result.slice(0, 10).map((t, i) => `${i+1}. ${t.name} (${t.points})`).join("\n");
       }
-      return language === "swahili" ? "Standings haipo" : "Standings not available";
+      return null;
     }
   } catch (err) {
     return null;
@@ -256,33 +355,42 @@ async function handleChat(jid, text, language) {
   const imageGenResult = await handleImageGen(text);
   if (imageGenResult) return imageGenResult;
   
-  // Image edit
-  const imageEditResult = await handleImageEdit(text);
-  if (imageEditResult) return imageEditResult;
-  
   // Games
   const game = handleGameCommand(text);
   if (game) return game;
   
-  // Sports
+  // Sports scores from API
   const sportsResult = await handleSports(text, language);
   if (sportsResult) return sportsResult;
   
-  // Current info
-  const currentInfo = await handleCurrentInfo(text, language);
-  if (currentInfo) return currentInfo;
+  // FIRST: Try to get accurate info for football/sports questions
+  const footballAnswer = await handleFootballQuestion(text);
+  if (footballAnswer && footballAnswer.length > 5) {
+    return footballAnswer;
+  }
   
-  // AI chat
+  // SECOND: Try current events
+  const currentAnswer = await handleCurrentEvents(text);
+  if (currentAnswer && currentAnswer.length > 5) {
+    return currentAnswer;
+  }
+  
+  // THIRD: Use AI chat with smart fallback
   try {
     const history = db.recentMsgs(jid, 6);
     const prompt = buildPrompt(text, history, language);
+    
     let response = await ai.smartChat(prompt);
     if (!response || response.length < 3) response = await ai.chat(prompt);
+    if (!response || response.length < 3) response = await davidApi.gemini(text);
+    
     const cleaned = cleanResponse(response || "", language);
     if (cleaned) return cleaned;
-    return language === "swahili" ? "Sawa" : "Ok";
+    
+    return "I'm not sure. Can you rephrase?";
   } catch (err) {
-    return language === "swahili" ? "Sawa" : "Ok";
+    console.error("[chat] Error:", err.message);
+    return "I'm not sure. Can you rephrase?";
   }
 }
 
