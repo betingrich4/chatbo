@@ -10,26 +10,24 @@ const GIRLFRIEND_NUMBERS = ["254716065432", "+254716065432", "0716065432", "2547
 // Stop reply cache
 const stopReplyCache = new Map();
 
-// Force English mode - user said they don't understand Swahili
+// Force English mode
 let forceEnglish = false;
 
-// Detect language - ONLY use Swahili if user used Swahili AND never forced English
+// Detect language
 function detectLanguage(text, lastWasSwahili = false) {
-  // If user explicitly said they don't understand Swahili, force English
   const lowerText = text.toLowerCase();
-  if (lowerText.includes("don't understand swahili") || lowerText.includes("not understand swahili") || lowerText === "i don't understand swahili") {
+  if (lowerText.includes("don't understand swahili") || lowerText.includes("not understand swahili")) {
     forceEnglish = true;
     return "english";
   }
   
-  // If forceEnglish is true, always return English
   if (forceEnglish) return "english";
   
-  const swahiliWords = ['sasa', 'vipi', 'niaje', 'habari', 'asante', 'sawa', 'poa', 'mambo', 'nzuri', 'karibu', 'sema', 'niambie', 'rada', 'alaf', 'ssup', 'kiac', 'hehe', 'bana', 'fiti', 'fresh'];
+  const swahiliWords = ['sasa', 'vipi', 'niaje', 'habari', 'asante', 'sawa', 'poa', 'mambo', 'nzuri', 'karibu', 'sema', 'niambie', 'rada', 'alaf', 'ssup', 'kiac', 'hehe'];
   
   const lower = text.toLowerCase();
   for (const word of swahiliWords) {
-    if (lower === word || lower.startsWith(word + " ") || lower.endsWith(" " + word) || lower.includes(" " + word + " ")) {
+    if (lower === word || lower.startsWith(word + " ") || lower.endsWith(" " + word)) {
       return "swahili";
     }
   }
@@ -56,7 +54,7 @@ function shouldReply(jid) {
   return true;
 }
 
-// Build prompt with persona - FORCE ENGLISH if needed
+// Build prompt
 function buildPrompt(userText, history, language) {
   const persona = db.allPersona();
   const personaText = persona.length ? `\nPersonality notes: ${persona.join(". ")}` : "";
@@ -65,13 +63,12 @@ function buildPrompt(userText, history, language) {
     `${m.role === "user" ? "User" : "Marisel"}: ${m.content}`
   ).join("\n");
   
-  // ALWAYS use English if forceEnglish is true OR language is english
   const useEnglish = forceEnglish || language !== "swahili";
   
   if (useEnglish) {
-    return `You are Marisel, a Kenyan guy. Reply ONLY in English. Never use Swahili words. Never say "as an AI" or "how can I help" or "niambie". Reply directly and naturally.
+    return `You are Marisel, a Kenyan guy. Reply ONLY in English. Never use Swahili words. Never say "as an AI" or "how can I help". Reply directly and naturally.
 
-IMPORTANT: Give accurate, up-to-date information. For sports results, news, or current events, use your knowledge.
+Give accurate, up-to-date information. For sports results, news, or current events, use your knowledge.
 
 ${personaText}
 
@@ -91,40 +88,35 @@ Marisel:`;
   }
 }
 
-// Clean response - remove AI talk and "niambie" spam
+// Clean response
 function cleanResponse(text, language) {
   if (!text) return null;
   
   let cleaned = text;
   
-  // Remove AI phrases
   const removePatterns = [
     /I am (an|an AI|Perplexity|ChatGPT|assistant|bot|language model)/gi,
     /I'm (an|an AI|assistant|bot)/gi, /as an AI/gi, /How can I help/gi,
     /What can I help/gi, /Is there anything/gi, /Feel free/gi,
-    /I'd be happy/gi, /Let me know/gi, /you can ask me/gi, /I'm here to/gi,
+    /I'd be happy/gi, /Let me know/gi, /you can ask me/gi,
   ];
   for (const re of removePatterns) cleaned = cleaned.replace(re, "");
   
-  // Remove excessive "niambie" - only keep if it's the ONLY word
   if (cleaned.toLowerCase().includes("niambie") && cleaned.length > 10) {
     cleaned = cleaned.replace(/niambie/gi, "");
   }
   
-  // If response is just "Niambie" or similar, replace with something better
   const justNiambie = /^(niambie|what do you want to know|say|tell me|how can i)/i.test(cleaned.trim());
   if (justNiambie && cleaned.length < 30) {
     return "I'm not sure. Can you rephrase?";
   }
   
-  // Keep only 1-2 sentences
   const sentences = cleaned.match(/[^.!?]+[.!?]+/g) || [cleaned];
   if (sentences.length > 2) cleaned = sentences.slice(0, 2).join(" ");
   if (cleaned.length > 200) cleaned = cleaned.substring(0, 200);
   
   cleaned = cleaned.trim();
   
-  // Final fallback
   if (!cleaned || cleaned.length < 2) {
     const fallbacks = ["Ok", "Cool", "Nice", "Got it", "I see"];
     return fallbacks[Math.floor(Math.random() * fallbacks.length)];
@@ -133,21 +125,19 @@ function cleanResponse(text, language) {
   return cleaned;
 }
 
-// Quick replies - ENGLISH ONLY unless Swahili forced
+// Quick replies
 function quickReply(text, language) {
   const lower = text.toLowerCase().trim();
   
-  // If user said they don't understand Swahili, force English replies
-  if (lower.includes("don't understand swahili") || lower.includes("not understand swahili")) {
+  if (lower.includes("don't understand swahili")) {
     return "Got it! I'll only use English from now on.";
   }
   
-  // English greetings
   if (lower === "hello" || lower === "hi" || lower === "hey" || lower === "hallo") {
     return "Hey";
   }
   
-  if (lower === "how are you" || lower === "how are you doing") {
+  if (lower === "how are you") {
     return "I'm good, thanks! You?";
   }
   
@@ -155,17 +145,14 @@ function quickReply(text, language) {
     return "Not much. What about you?";
   }
   
-  // Thank you
-  if (lower.includes("thank") || lower === "thanks") {
+  if (lower.includes("thank")) {
     return "You're welcome!";
   }
   
-  // Who are you
   if (lower.includes("who are you") || lower === "what's your name") {
     return "I'm Marisel. Nice to meet you!";
   }
   
-  // Swahili greetings (only if user used Swahili)
   if (language === "swahili") {
     if (lower === "sasa" || lower === "vipi" || lower === "niaje") return "Poa";
     if (lower === "habari") return "Nzuri";
@@ -175,97 +162,86 @@ function quickReply(text, language) {
   return null;
 }
 
-// Use Perplexity for accurate, up-to-date information (sports, news, current events)
-async function getAccurateInfo(question) {
-  try {
-    // Use Perplexity API for current/accurate info
-    const result = await davidApi.perplexity(question);
-    if (result && result.length > 5) {
-      // Clean the response - remove Perplexity's self-intro
-      let cleaned = result;
-      const removePhrases = [
-        /I am (Perplexity|an AI|an AI assistant)/gi,
-        /According to my knowledge/gi,
-        /Based on my search/gi,
-        /I found that/gi,
-      ];
-      for (const phrase of removePhrases) {
-        cleaned = cleaned.replace(phrase, "");
-      }
-      return cleaned.trim();
-    }
-  } catch (err) {
-    console.log("[perplexity] Error:", err.message);
-  }
-  return null;
-}
+// ==================== AUTO DOWNLOAD - DETECT ANY LINK ====================
 
-// Handle football/sports questions specifically
-async function handleFootballQuestion(text) {
-  const lower = text.toLowerCase();
-  
-  // Detect football-related questions
-  const footballKeywords = ['manchester city', 'man city', 'city', 'arsenal', 'chelsea', 'liverpool', 'united', 'man united', 'epl', 'premier league', 'fa cup', 'champions league', 'ucl', 'uefa', 'match', 'game', 'score', 'won', 'lost', 'played against', 'fixture', 'result'];
-  
-  const isFootball = footballKeywords.some(k => lower.includes(k));
-  if (!isFootball) return null;
-  
-  // Use Perplexity for accurate football info
-  const accurateAnswer = await getAccurateInfo(text);
-  if (accurateAnswer) {
-    // Keep it short
-    const shortAnswer = accurateAnswer.split(/[.!?]/)[0] + ".";
-    return shortAnswer;
-  }
-  
-  return null;
-}
-
-// Handle current events/news
-async function handleCurrentEvents(text) {
-  const lower = text.toLowerCase();
-  
-  const currentKeywords = ['news', 'today', 'latest', 'current', 'yesterday', 'last night', 'this week', 'happened', 'going on', 'update'];
-  const isCurrent = currentKeywords.some(k => lower.includes(k));
-  
-  if (isCurrent) {
-    const accurateAnswer = await getAccurateInfo(text);
-    if (accurateAnswer) {
-      const shortAnswer = accurateAnswer.split(/[.!?]/)[0] + ".";
-      return shortAnswer;
-    }
-  }
-  return null;
-}
-
-// Handle downloads
-async function handleDownload(text) {
+async function handleAutoDownload(text) {
+  // Extract any URL from the message
   const urlMatch = text.match(URL_RE);
   if (!urlMatch) return null;
+  
   const url = urlMatch[1];
   const lower = text.toLowerCase();
   
+  console.log(`[download] Detected URL: ${url}`);
+  
+  // Check if message contains "download" or just send link - either way, download
+  const wantsDownload = lower.includes("download") || lower.includes("down") || lower.includes("get") || lower.includes("save");
+  
   try {
-    if (url.includes("facebook.com") || url.includes("fb.com")) {
+    // FACEBOOK DOWNLOAD
+    if (url.includes("facebook.com") || url.includes("fb.com") || url.includes("fb.watch") || url.includes("share")) {
+      console.log(`[download] Facebook detected, fetching...`);
       const preferHD = lower.includes("hd");
-      return await downloads.facebook(url, preferHD);
+      const downloadUrl = await downloads.facebook(url, preferHD);
+      if (downloadUrl && downloadUrl.startsWith("http")) {
+        console.log(`[download] Facebook success: ${downloadUrl.substring(0, 50)}...`);
+        return downloadUrl;
+      }
+      return "Facebook download failed. The video might be private.";
     }
-    if (url.includes("instagram.com")) {
-      return await downloads.instagram(url);
+    
+    // INSTAGRAM DOWNLOAD
+    if (url.includes("instagram.com") || url.includes("instagr.am") || url.includes("reel")) {
+      console.log(`[download] Instagram detected, fetching...`);
+      const downloadUrl = await downloads.instagram(url);
+      if (downloadUrl && downloadUrl.startsWith("http")) {
+        console.log(`[download] Instagram success`);
+        return downloadUrl;
+      }
+      return "Instagram download failed. The reel might be private.";
     }
+    
+    // TIKTOK DOWNLOAD
     if (url.includes("tiktok.com")) {
-      return await downloads.tiktok(url);
+      console.log(`[download] TikTok detected, fetching...`);
+      const downloadUrl = await downloads.tiktok(url);
+      if (downloadUrl && downloadUrl.startsWith("http")) {
+        console.log(`[download] TikTok success`);
+        return downloadUrl;
+      }
+      return "TikTok download failed.";
     }
+    
+    // TWITTER/X DOWNLOAD
     if (url.includes("twitter.com") || url.includes("x.com")) {
-      return await downloads.twitter(url);
+      console.log(`[download] Twitter detected, fetching...`);
+      const downloadUrl = await downloads.twitter(url);
+      if (downloadUrl && downloadUrl.startsWith("http")) {
+        console.log(`[download] Twitter success`);
+        return downloadUrl;
+      }
+      return "Twitter download failed.";
     }
-    if (lower.includes("mp3") || lower.includes("audio")) {
-      return await downloads.youtubeMp3(url);
+    
+    // YOUTUBE MP3
+    if ((url.includes("youtube.com") || url.includes("youtu.be")) && (lower.includes("mp3") || lower.includes("audio"))) {
+      console.log(`[download] YouTube MP3 detected, fetching...`);
+      const downloadUrl = await downloads.youtubeMp3(url);
+      if (downloadUrl && downloadUrl.startsWith("http")) {
+        console.log(`[download] YouTube MP3 success`);
+        return downloadUrl;
+      }
+      return "YouTube MP3 download failed.";
     }
-  } catch (err) {
+    
+    // If it's a link but not a supported platform, just return null (let AI handle it)
+    console.log(`[download] Unsupported platform or not a download request`);
     return null;
+    
+  } catch (err) {
+    console.error(`[download] Error:`, err.message);
+    return "Download failed. Try again later.";
   }
-  return null;
 }
 
 // Handle music
@@ -281,6 +257,53 @@ async function handleImageGen(text) {
   if (!match) return null;
   const imageUrl = await imageGen.fluxv2(match[1]);
   if (imageUrl) return { image: imageUrl, caption: "Here it is" };
+  return null;
+}
+
+// Use Perplexity for accurate info
+async function getAccurateInfo(question) {
+  try {
+    const result = await davidApi.perplexity(question);
+    if (result && result.length > 5) {
+      let cleaned = result;
+      const removePhrases = [
+        /I am (Perplexity|an AI|an AI assistant)/gi,
+        /According to my knowledge/gi,
+        /Based on my search/gi,
+      ];
+      for (const phrase of removePhrases) {
+        cleaned = cleaned.replace(phrase, "");
+      }
+      const shortAnswer = cleaned.split(/[.!?]/)[0] + ".";
+      return shortAnswer.length > 200 ? shortAnswer.substring(0, 200) : shortAnswer;
+    }
+  } catch (err) {}
+  return null;
+}
+
+// Handle football questions
+async function handleFootballQuestion(text) {
+  const lower = text.toLowerCase();
+  const footballKeywords = ['manchester city', 'man city', 'arsenal', 'chelsea', 'liverpool', 'united', 'epl', 'premier league', 'fa cup', 'champions league', 'uefa', 'match', 'score', 'won', 'lost', 'played against'];
+  
+  const isFootball = footballKeywords.some(k => lower.includes(k));
+  if (!isFootball) return null;
+  
+  const accurateAnswer = await getAccurateInfo(text);
+  if (accurateAnswer) return accurateAnswer;
+  return null;
+}
+
+// Handle current events
+async function handleCurrentEvents(text) {
+  const lower = text.toLowerCase();
+  const currentKeywords = ['news', 'today', 'latest', 'current', 'yesterday', 'last night', 'happened'];
+  
+  const isCurrent = currentKeywords.some(k => lower.includes(k));
+  if (isCurrent) {
+    const accurateAnswer = await getAccurateInfo(text);
+    if (accurateAnswer) return accurateAnswer;
+  }
   return null;
 }
 
@@ -339,13 +362,23 @@ async function handleSports(text, language) {
 
 // Main chat handler
 async function handleChat(jid, text, language) {
+  // ========== STEP 1: AUTO DOWNLOAD ANY LINK ==========
+  // This runs FIRST - if there's a link, download it immediately
+  const downloadResult = await handleAutoDownload(text);
+  if (downloadResult) {
+    // If it's a download URL, return it directly
+    if (downloadResult.startsWith("http")) {
+      return downloadResult;
+    }
+    // If it's an error message about download
+    if (downloadResult.includes("failed") || downloadResult.includes("private")) {
+      return downloadResult;
+    }
+  }
+  
   // Quick reply
   const quick = quickReply(text, language);
   if (quick) return quick;
-  
-  // Download
-  const download = await handleDownload(text);
-  if (download) return download;
   
   // Music
   const musicResult = await handleMusic(text);
@@ -363,19 +396,15 @@ async function handleChat(jid, text, language) {
   const sportsResult = await handleSports(text, language);
   if (sportsResult) return sportsResult;
   
-  // FIRST: Try to get accurate info for football/sports questions
+  // Football questions (accurate info)
   const footballAnswer = await handleFootballQuestion(text);
-  if (footballAnswer && footballAnswer.length > 5) {
-    return footballAnswer;
-  }
+  if (footballAnswer) return footballAnswer;
   
-  // SECOND: Try current events
+  // Current events
   const currentAnswer = await handleCurrentEvents(text);
-  if (currentAnswer && currentAnswer.length > 5) {
-    return currentAnswer;
-  }
+  if (currentAnswer) return currentAnswer;
   
-  // THIRD: Use AI chat with smart fallback
+  // AI chat
   try {
     const history = db.recentMsgs(jid, 6);
     const prompt = buildPrompt(text, history, language);
