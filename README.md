@@ -1,47 +1,70 @@
-# Marisel — WhatsApp AI Agent
+# Marisel — WhatsApp AI (v3)
 
-Personal WhatsApp assistant. Male, Kenyan, chill. Uses GiftedTech APIs.
+Personal WhatsApp brain. Grok-powered, persistent memory, custom rules, games, stickers, status auto-view, reply-quoting.
 
-## Features
-- Owner-only `marisel pause` / `marisel resume` per chat
-- Ignores all groups (`@g.us`)
-- Permanent SQLite memory
-- Auto-detects YouTube / TikTok / IG / Twitter / Spotify links → downloads
-- Football commands (live scores, EPL standings, news, team/player)
-- Image generation ("generate image of …")
-- Live football alerts to owner every 2 minutes
-- Express `/health` endpoint
-- Auto-reconnect with exponential backoff
-- Owner messaging own number = training mode
+## What's new in v3
 
-## Run locally
+- **Grok (xAI) brain** with full conversation history (last 60 msgs per chat) — multilingual, mirrors user's language.
+- **Persistent SQLite memory** at `$DATA_DIR/marisel.db` (use Render disk at `/data`).
+- **Style few-shots** loaded from `marisel_style.txt` (extracted from your real exported chat — bot literally mimics how you text).
+- **Custom reply rules** — train via self-chat: `if someone says sasa respond poa sana uko aje`.
+- **Sticker support** — drop `.webp` files in `src/sticker/`. Use `sticker` to send random. Train sticker rules: `sticker: lmao => laugh1.webp`.
+- **Reply with quote** — every reply highlights the original message (the slide-to-reply thread look).
+- **Auto status view** — silently views every status WhatsApp posts to you (toggle `AUTO_VIEW_STATUS=false` to disable).
+- **Games**: trivia, riddle, number guess, rock-paper-scissors, dice, coin flip, 8-ball.
+- **Reminders**: `remind me in 10 minutes to call mum`.
+- **Fact memory**: bot silently learns names, ages, locations, jobs, birthdays.
+- **Auto downloads**: paste a TikTok / IG / FB / Twitter / YouTube link.
+- **Owner pause/resume** per chat: `marisel pause` / `marisel resume`.
+
+## Self-chat training commands
+
+Open WhatsApp → chat with **yourself** (your own number). Every message you send to yourself is interpreted as a command:
+
+| You type | What happens |
+|---|---|
+| `help` | shows this list |
+| `if someone says sasa respond poa sana uko aje` | saves a hard reply rule |
+| `niaje => poa wewe?` | short form rule |
+| `sticker: lmao => laugh1.webp` | trained sticker rule |
+| `show training` / `show rules` | list current data |
+| `remove training 3` / `remove rule 2` | delete by number |
+| `clear training` / `clear rules` | wipe |
+| `stickers` | list loaded sticker files |
+| anything else | saved as a persona note (long-term flavor) |
+
+## Deploy on Render
+
+1. Push this folder to GitHub.
+2. Render → New → Blueprint → pick your repo. Uses `render.yaml` (Starter plan + 1 GB persistent disk at `/data`).
+3. Add env vars in dashboard or rely on `.env.example` values.
+4. Open the service URL → scan QR with WhatsApp → Linked Devices → Link a Device.
+5. Session persists in `/data/auth_info`. SQLite at `/data/marisel.db`. Restarts don't lose state.
+
+## Local dev
+
 ```bash
 cp .env.example .env
 npm install
 npm start
 ```
-Scan the QR shown in terminal with WhatsApp → Linked Devices → Link a Device.
 
-## Deploy on Render
+Open `http://localhost:3000` for the QR.
 
-1. Push this folder to a GitHub repo.
-2. On Render: **New +** → **Blueprint** → pick the repo. `render.yaml` is detected automatically.
-3. Render provisions a persistent 1GB disk at `/data` for auth + database (so you scan the QR only once).
-4. First deploy: open the service's **Logs** tab — the QR code prints there. Scan it from your phone.
-5. After that the session stays alive forever; redeploys reuse the saved auth.
+## Stickers
 
-**Important:** use a **Starter** plan or higher. Free Render web services sleep on inactivity, which breaks the WhatsApp WebSocket. Starter ($7/mo) stays on 24/7 and includes the persistent disk.
+Drop your `.webp` stickers into `src/sticker/`. They're committed to git so Render gets them too. No restart needed for new files — `stickers` command re-scans the folder.
 
-## Owner controls (from 254740007567)
-| Send | Marisel does |
-|------|---------|
-| `marisel pause` | Stops replying in that chat. Replies `Paused`. |
-| `marisel resume` | Resumes that chat. Replies `Resumed`. |
-| Any message to own number | Training — appended to persona. Replies `Learned`. |
+## Tests after deploy
 
-## Files
-- `index.js` — entry, Express, Baileys connection, message router
-- `db.js` — SQLite (better-sqlite3)
-- `ai.js` — GiftedTech AI + tool routing
-- `football.js` — live score monitor
-- `apis.js` — GiftedTech endpoint helpers
+| Message (from another phone) | Expected |
+|---|---|
+| `Sema` | `poa, vipi wewe` |
+| `play trivia` | trivia question |
+| `roll dice` | `🎲 4` |
+| `8ball will it rain` | random 8-ball |
+| `sticker` | random sticker |
+| `remind me in 30 seconds to test` | confirms + pings in 30s |
+| paste TikTok link | downloads it |
+
+After you train `if someone says sasa respond poa sana uko aje` from self-chat, any "sasa" you receive triggers exactly that reply, quoted on the original message.
