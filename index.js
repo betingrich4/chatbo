@@ -39,7 +39,7 @@ app.get("/", (_req, res) => {
       <head><title>Marisel - Connected</title>
       <style>body{font-family:system-ui;display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0;background:linear-gradient(135deg,#075e54,#128c7e);color:white}.container{text-align:center;padding:2rem;background:rgba(0,0,0,0.7);border-radius:20px}.checkmark{font-size:5rem;color:#25d366}</style>
       </head>
-      <body><div class="container"><div class="checkmark">✓</div><h2>✅ Connected to WhatsApp!</h2><p>Marisel is running</p></div></body></html>
+      <body><div class="container"><div class="checkmark">✓</div><h2>Connected to WhatsApp!</h2><p>Marisel is running</p></div></body></html>
     `);
   } else if (currentQR) {
     qrcode.toDataURL(currentQR, (err, qrDataUrl) => {
@@ -85,51 +85,71 @@ async function handleMessage(m) {
     const text = extractText(m).trim();
     if (!text) return;
     
+    // Check if this is a self-chat (training mode)
+    // When you message YOURSELF, fromMe will be true and jid will be your own number
+    const isSelfChat = m.key.fromMe && jid === OWNER_JID;
     const isFromOwner = m.key.fromMe || jid === OWNER_JID;
     
-    // Training mode - owner messaging self
-    if (m.key.fromMe && jid === OWNER_JID) {
+    console.log(`[debug] jid: ${jid}, OWNER_JID: ${OWNER_JID}, isSelfChat: ${isSelfChat}, isFromOwner: ${isFromOwner}, text: ${text.substring(0, 30)}`);
+    
+    // TRAINING MODE: Owner messaging themselves
+    if (isSelfChat) {
       const lower = text.toLowerCase().trim();
       
+      // Show all training data
       if (lower === "show training") {
         const notes = db.allPersonaWithIds();
         if (notes.length === 0) {
-          await sock.sendMessage(jid, { text: "No training data yet." });
+          await sock.sendMessage(jid, { text: "📚 No training data yet. Send me messages to train me!" });
         } else {
-          let msg = "📚 *Training Data:*\n\n";
+          let msg = "📚 *Your Training Data:*\n\n";
           for (let i = 0; i < notes.length; i++) {
-            msg += `${i+1}. ${notes[i].note.substring(0, 100)}${notes[i].note.length > 100 ? "..." : ""}\n`;
+            const note = notes[i].note.length > 80 ? notes[i].note.substring(0, 80) + "..." : notes[i].note;
+            msg += `${i+1}. ${note}\n`;
           }
+          msg += `\n_Total: ${notes.length} entries_`;
           await sock.sendMessage(jid, { text: msg });
         }
         return;
       }
       
+      // Clear all training data
       if (lower === "clear training") {
         db.clearPersona();
-        await sock.sendMessage(jid, { text: "Training data cleared." });
+        await sock.sendMessage(jid, { text: "🗑️ Training data cleared." });
         return;
       }
       
+      // Remove specific training entry
       const removeMatch = lower.match(/remove training (\d+)/);
       if (removeMatch) {
         const notes = db.allPersonaWithIds();
         const index = parseInt(removeMatch[1]) - 1;
         if (notes[index]) {
           db.removePersonaById(notes[index].id);
-          await sock.sendMessage(jid, { text: `Removed training entry ${removeMatch[1]}` });
+          await sock.sendMessage(jid, { text: `✅ Removed training entry ${removeMatch[1]}` });
         } else {
-          await sock.sendMessage(jid, { text: "Invalid entry number" });
+          await sock.sendMessage(jid, { text: `❌ Entry ${removeMatch[1]} not found. Use "show training" to see entries.` });
         }
         return;
       }
       
+      // Count training entries
+      if (lower === "training count") {
+        const count = db.countPersona();
+        await sock.sendMessage(jid, { text: `📊 You have ${count} training entr${count === 1 ? 'y' : 'ies'}.` });
+        return;
+      }
+      
+      // Normal training - save the message
       db.addPersona(text);
-      await sock.sendMessage(jid, { text: "✅ Learned" });
+      const count = db.countPersona();
+      await sock.sendMessage(jid, { text: `✅ Learned (${count} total)` });
+      console.log(`[training] Saved: ${text.substring(0, 50)}`);
       return;
     }
     
-    // Owner commands
+    // Owner commands for other chats
     if (isFromOwner && text.toLowerCase() === "marisel pause") {
       db.pause(jid);
       await sock.sendMessage(jid, { text: "Paused" });
@@ -141,16 +161,22 @@ async function handleMessage(m) {
       return;
     }
     
+    // Ignore other fromMe messages
     if (m.key.fromMe) return;
+    
+    // Check if chat is paused
     if (db.isPaused(jid)) return;
     
+    // Store user message
     db.upsertUser(jid, m.pushName || "");
     db.addMsg(jid, "user", text);
     
+    // Show typing indicator
     try {
       await sock.sendPresenceUpdate("composing", jid);
     } catch {}
     
+    // Get reply
     const reply = await route(jid, text, isFromOwner, lastLanguage);
     
     if (reply) {
@@ -162,7 +188,7 @@ async function handleMessage(m) {
         db.addMsg(jid, "marisel", "[image]");
       }
       
-      // Track last language used
+      // Track language
       const lowerText = text.toLowerCase();
       const swahiliWords = ['sasa', 'vipi', 'niaje', 'habari', 'asante', 'sawa', 'poa', 'mambo'];
       lastLanguage = swahiliWords.some(w => lowerText.includes(w)) ? "swahili" : "english";
@@ -171,6 +197,7 @@ async function handleMessage(m) {
     try {
       await sock.sendPresenceUpdate("paused", jid);
     } catch {}
+    
   } catch (e) {
     console.error("[msg]", e.message);
   }
@@ -202,6 +229,8 @@ async function start() {
       currentQR = null;
       reconnectAttempts = 0;
       console.log("[wa] Connected as", sock.user?.id);
+      console.log("[wa] Your JID:", sock.user?.id);
+      console.log("[wa] Owner JID for training:", OWNER_JID);
     }
     if (connection === "close") {
       connectionStatus = "closed";
@@ -220,8 +249,10 @@ async function start() {
   sock.ev.on("messages.upsert", async ({ messages, type }) => {
     if (type !== "notify") return;
     for (const m of messages) {
+      // Auto-view statuses
       if (m.key.remoteJid === "status@broadcast") {
         await sock.readMessages([m.key]);
+        console.log("[status] Viewed status");
         continue;
       }
       await handleMessage(m);
