@@ -2,7 +2,7 @@ const { sports } = require("./apis");
 const db = require("./db");
 
 function matchId(m) {
-  return m.id || m.matchId || `${(m.home || "").toLowerCase()}-vs-${(m.away || "").toLowerCase()}`;
+  return m.id || `${(m.home || "").toLowerCase()}-vs-${(m.away || "").toLowerCase()}`;
 }
 
 function normalize(m) {
@@ -17,38 +17,27 @@ function normalize(m) {
 }
 
 async function pollOnce(sendToOwner) {
-  let data;
   try {
-    data = await sports.liveScores();
-  } catch {
-    return;
-  }
-  
-  const list = Array.isArray(data) ? data : [];
-  for (const raw of list) {
-    const m = normalize(raw);
-    const prev = db.getMatch(m.match_id);
-    db.upsertMatch(m);
-    
-    if (!prev) continue;
-    
-    const goal = m.home_score > prev.home_score || m.away_score > prev.away_score;
-    if (goal) {
-      const scorer = m.home_score > prev.home_score ? m.home : m.away;
-      const text = `⚽ GOAL! ${m.home} ${m.home_score} - ${m.away_score} ${m.away}\n${scorer} scored!`;
-      try {
-        await sendToOwner(text);
-      } catch {}
+    const data = await sports.liveScores();
+    const list = Array.isArray(data) ? data : [];
+    for (const raw of list) {
+      const m = normalize(raw);
+      const prev = db.getMatch(m.match_id);
+      db.upsertMatch(m);
+      if (!prev) continue;
+      const goal = m.home_score > prev.home_score || m.away_score > prev.away_score;
+      if (goal) {
+        const scorer = m.home_score > prev.home_score ? m.home : m.away;
+        await sendToOwner(`⚽ GOAL! ${m.home} ${m.home_score}-${m.away_score} ${m.away}\n${scorer} scored!`);
+      }
     }
-  }
+  } catch (err) {}
 }
 
 function start(sendToOwner) {
   const interval = parseInt(process.env.CHECK_INTERVAL || "120000", 10);
   pollOnce(async () => {}).catch(() => {});
-  setInterval(() => {
-    pollOnce(sendToOwner).catch(() => {});
-  }, interval);
+  setInterval(() => pollOnce(sendToOwner).catch(() => {}), interval);
 }
 
 module.exports = { start };
