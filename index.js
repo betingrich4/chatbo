@@ -29,132 +29,31 @@ let connectionStatus = "starting";
 let currentQR = null;
 let sock = null;
 let reconnectAttempts = 0;
+let lastLanguage = "english";
 
 app.get("/", (_req, res) => {
   if (connectionStatus === "open") {
     res.send(`
       <!DOCTYPE html>
       <html>
-      <head>
-        <title>Marisel - Connected</title>
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <style>
-          body {
-            font-family: system-ui, sans-serif;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-            margin: 0;
-            background: linear-gradient(135deg, #075e54, #128c7e);
-            color: white;
-          }
-          .container {
-            text-align: center;
-            padding: 2rem;
-            background: rgba(0,0,0,0.7);
-            border-radius: 20px;
-          }
-          .checkmark { font-size: 5rem; color: #25d366; }
-        </style>
+      <head><title>Marisel - Connected</title>
+      <style>body{font-family:system-ui;display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0;background:linear-gradient(135deg,#075e54,#128c7e);color:white}.container{text-align:center;padding:2rem;background:rgba(0,0,0,0.7);border-radius:20px}.checkmark{font-size:5rem;color:#25d366}</style>
       </head>
-      <body>
-        <div class="container">
-          <div class="checkmark">✓</div>
-          <h2>✅ Connected to WhatsApp!</h2>
-          <p>Marisel is running</p>
-        </div>
-      </body>
-      </html>
+      <body><div class="container"><div class="checkmark">✓</div><h2>✅ Connected to WhatsApp!</h2><p>Marisel is running</p></div></body></html>
     `);
   } else if (currentQR) {
     qrcode.toDataURL(currentQR, (err, qrDataUrl) => {
       res.send(`
         <!DOCTYPE html>
         <html>
-        <head>
-          <title>Marisel - Scan QR</title>
-          <meta name="viewport" content="width=device-width, initial-scale=1">
-          <style>
-            body {
-              font-family: system-ui, sans-serif;
-              display: flex;
-              justify-content: center;
-              align-items: center;
-              min-height: 100vh;
-              margin: 0;
-              background: linear-gradient(135deg, #075e54, #128c7e);
-              color: white;
-            }
-            .container {
-              text-align: center;
-              padding: 2rem;
-              background: rgba(0,0,0,0.7);
-              border-radius: 20px;
-            }
-            .qr-container {
-              background: white;
-              padding: 1rem;
-              border-radius: 16px;
-              display: inline-block;
-              margin: 1rem 0;
-            }
-            .qr-container img { width: 250px; height: 250px; }
-            button {
-              background: #25d366;
-              border: none;
-              color: white;
-              padding: 10px 20px;
-              border-radius: 8px;
-              cursor: pointer;
-            }
-          </style>
+        <head><title>Marisel - Scan QR</title>
+        <style>body{font-family:system-ui;display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0;background:linear-gradient(135deg,#075e54,#128c7e);color:white}.container{text-align:center;padding:2rem;background:rgba(0,0,0,0.7);border-radius:20px}.qr-container{background:white;padding:1rem;border-radius:16px;display:inline-block;margin:1rem 0}.qr-container img{width:250px;height:250px}button{background:#25d366;border:none;color:white;padding:10px 20px;border-radius:8px;cursor:pointer}</style>
         </head>
-        <body>
-          <div class="container">
-            <h1>📱 Scan QR Code</h1>
-            <div class="qr-container"><img src="${qrDataUrl}"></div>
-            <p>WhatsApp > Settings > Linked Devices > Link a Device</p>
-            <button onclick="location.reload()">⟳ Refresh</button>
-          </div>
-        </body>
-      </html>
+        <body><div class="container"><h1>📱 Scan QR Code</h1><div class="qr-container"><img src="${qrDataUrl}"></div><p>WhatsApp > Settings > Linked Devices > Link a Device</p><button onclick="location.reload()">⟳ Refresh</button></div></body></html>
       `);
     });
   } else {
-    res.send(`
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>Marisel - Starting</title>
-        <meta http-equiv="refresh" content="3">
-        <style>
-          body {
-            font-family: system-ui, sans-serif;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-            margin: 0;
-            background: linear-gradient(135deg, #075e54, #128c7e);
-            color: white;
-          }
-          .spinner {
-            width: 50px;
-            height: 50px;
-            border: 4px solid rgba(255,255,255,0.3);
-            border-top-color: #25d366;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-          }
-          @keyframes spin { to { transform: rotate(360deg); } }
-        </style>
-      </head>
-      <body>
-        <div class="spinner"></div>
-      </body>
-      </html>
-    `);
+    res.send(`<!DOCTYPE html><html><head><title>Marisel - Starting</title><meta http-equiv="refresh" content="3"><style>body{font-family:system-ui;display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0;background:linear-gradient(135deg,#075e54,#128c7e);color:white}.spinner{width:50px;height:50px;border:4px solid rgba(255,255,255,0.3);border-top-color:#25d366;border-radius:50%;animation:spin 1s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}</style></head><body><div class="spinner"></div></body></html>`);
   }
 });
 
@@ -167,20 +66,14 @@ app.listen(PORT, () => console.log(`[http] Listening on ${PORT}`));
 function extractText(msg) {
   const m = msg.message;
   if (!m) return "";
-  return m.conversation ||
-    m.extendedTextMessage?.text ||
-    m.imageMessage?.caption ||
-    m.videoMessage?.caption ||
-    "";
+  return m.conversation || m.extendedTextMessage?.text || m.imageMessage?.caption || m.videoMessage?.caption || "";
 }
 
 async function sendToOwner(text) {
   if (!sock) return;
   try {
     await sock.sendMessage(OWNER_JID, { text });
-  } catch (e) {
-    console.error("[owner]", e.message);
-  }
+  } catch (e) {}
 }
 
 async function handleMessage(m) {
@@ -189,18 +82,52 @@ async function handleMessage(m) {
     const jid = m.key.remoteJid;
     if (!jid || jid.endsWith("@g.us") || jid === "status@broadcast") return;
     
-    // Check if sender is girlfriend - completely ignore
-    const GIRLFRIEND_NUMBERS = ["0716065432", "254708219667", "+254708219667"];
-    const isGirlfriend = GIRLFRIEND_NUMBERS.some(num => jid.includes(num));
-    if (isGirlfriend) {
-      console.log(`[msg] Ignoring message from girlfriend: ${jid}`);
-      return;
-    }
-    
     const text = extractText(m).trim();
     if (!text) return;
     
     const isFromOwner = m.key.fromMe || jid === OWNER_JID;
+    
+    // Training mode - owner messaging self
+    if (m.key.fromMe && jid === OWNER_JID) {
+      const lower = text.toLowerCase().trim();
+      
+      if (lower === "show training") {
+        const notes = db.allPersonaWithIds();
+        if (notes.length === 0) {
+          await sock.sendMessage(jid, { text: "No training data yet." });
+        } else {
+          let msg = "📚 *Training Data:*\n\n";
+          for (let i = 0; i < notes.length; i++) {
+            msg += `${i+1}. ${notes[i].note.substring(0, 100)}${notes[i].note.length > 100 ? "..." : ""}\n`;
+          }
+          await sock.sendMessage(jid, { text: msg });
+        }
+        return;
+      }
+      
+      if (lower === "clear training") {
+        db.clearPersona();
+        await sock.sendMessage(jid, { text: "Training data cleared." });
+        return;
+      }
+      
+      const removeMatch = lower.match(/remove training (\d+)/);
+      if (removeMatch) {
+        const notes = db.allPersonaWithIds();
+        const index = parseInt(removeMatch[1]) - 1;
+        if (notes[index]) {
+          db.removePersonaById(notes[index].id);
+          await sock.sendMessage(jid, { text: `Removed training entry ${removeMatch[1]}` });
+        } else {
+          await sock.sendMessage(jid, { text: "Invalid entry number" });
+        }
+        return;
+      }
+      
+      db.addPersona(text);
+      await sock.sendMessage(jid, { text: "✅ Learned" });
+      return;
+    }
     
     // Owner commands
     if (isFromOwner && text.toLowerCase() === "marisel pause") {
@@ -214,13 +141,6 @@ async function handleMessage(m) {
       return;
     }
     
-    // Training mode
-    if (m.key.fromMe && jid === OWNER_JID) {
-      db.addPersona(text);
-      await sock.sendMessage(jid, { text: "Learned" });
-      return;
-    }
-    
     if (m.key.fromMe) return;
     if (db.isPaused(jid)) return;
     
@@ -231,17 +151,21 @@ async function handleMessage(m) {
       await sock.sendPresenceUpdate("composing", jid);
     } catch {}
     
-    const reply = await route(jid, text);
+    const reply = await route(jid, text, isFromOwner, lastLanguage);
     
     if (reply) {
       if (typeof reply === "string") {
         await sock.sendMessage(jid, { text: reply });
         db.addMsg(jid, "marisel", reply);
-      } else if (reply.sticker) {
-        const response = await axios.get(reply.sticker, { responseType: 'arraybuffer' });
-        await sock.sendMessage(jid, { sticker: Buffer.from(response.data) });
-        db.addMsg(jid, "marisel", "[sticker]");
+      } else if (reply.image) {
+        await sock.sendMessage(jid, { image: { url: reply.image }, caption: reply.caption || "" });
+        db.addMsg(jid, "marisel", "[image]");
       }
+      
+      // Track last language used
+      const lowerText = text.toLowerCase();
+      const swahiliWords = ['sasa', 'vipi', 'niaje', 'habari', 'asante', 'sawa', 'poa', 'mambo'];
+      lastLanguage = swahiliWords.some(w => lowerText.includes(w)) ? "swahili" : "english";
     }
     
     try {
@@ -293,14 +217,11 @@ async function start() {
     }
   });
   
-  // Handle status updates - auto view
   sock.ev.on("messages.upsert", async ({ messages, type }) => {
     if (type !== "notify") return;
     for (const m of messages) {
-      // Auto-view statuses
       if (m.key.remoteJid === "status@broadcast") {
         await sock.readMessages([m.key]);
-        console.log("[status] Viewed status");
         continue;
       }
       await handleMessage(m);
@@ -308,7 +229,7 @@ async function start() {
   });
 }
 
-footballMonitor.start(sendToOwner);
 start().catch(console.error);
 
 process.on("unhandledRejection", (e) => console.error("[unhandled]", e));
+process.on("uncaughtException", (e) => console.error("[uncaught]", e));
