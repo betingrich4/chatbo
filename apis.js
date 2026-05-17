@@ -1,4 +1,5 @@
 const axios = require("axios");
+const FormData = require("form-data");
 
 const GIFTED_KEY = process.env.API_KEY || "gifted";
 const GIFTED_BASE = "https://api.giftedtech.co.ke/api";
@@ -10,6 +11,18 @@ async function getFast(url, retries = 1) {
   for (let i = 0; i <= retries; i++) {
     try {
       const res = await http.get(url);
+      return res.data;
+    } catch (err) {
+      if (i === retries) throw err;
+      await new Promise(r => setTimeout(r, 500));
+    }
+  }
+}
+
+async function postFast(url, data, retries = 1) {
+  for (let i = 0; i <= retries; i++) {
+    try {
+      const res = await http.post(url, data);
       return res.data;
     } catch (err) {
       if (i === retries) throw err;
@@ -39,9 +52,11 @@ function extractResponse(data) {
   return null;
 }
 
-// ALL AI ENDPOINTS - DavidCyril
+// ==================== ALL AI ENDPOINTS ====================
+
+// DavidCyril AI endpoints
 const davidApi = {
-  // Main chat endpoint (new)
+  // Main chat endpoint
   chat: async (text) => {
     const url = `${DAVID_BASE}/ai/chat?question=${encodeURIComponent(text)}`;
     const data = await getFast(url);
@@ -76,15 +91,22 @@ const davidApi = {
     return extractResponse(data);
   },
   
-  // Perplexity (for detailed responses)
+  // Perplexity - up to date, good for news/current info
   perplexity: async (text) => {
     const url = `${DAVID_BASE}/ai/perplexity?text=${encodeURIComponent(text)}`;
+    const data = await getFast(url);
+    return extractResponse(data);
+  },
+  
+  // Gemini
+  gemini: async (text) => {
+    const url = `${DAVID_BASE}/ai/gemini?text=${encodeURIComponent(text)}`;
     const data = await getFast(url);
     return extractResponse(data);
   }
 };
 
-// ALL AI ENDPOINTS - Gifted
+// Gifted AI endpoints
 const giftedApi = {
   gpt4o: async (text) => {
     const url = `${GIFTED_BASE}/ai/gpt4o?apikey=${GIFTED_KEY}&q=${encodeURIComponent(text)}`;
@@ -117,43 +139,30 @@ const giftedApi = {
   }
 };
 
-// Main AI with ALL endpoints (tried in order)
+// Main AI with smart fallback - tries all APIs
 const ai = {
-  // Primary: DavidCyril chat endpoint (fastest)
+  // Primary: DavidCyril chat endpoint
   chat: async (text) => {
     const url = `${DAVID_BASE}/ai/chat?question=${encodeURIComponent(text)}`;
     const data = await getFast(url);
     return extractResponse(data);
   },
   
-  // All DavidCyril endpoints
-  davidGpt3: async (text) => davidApi.gpt3(text),
-  davidChatgpt: async (text) => davidApi.chatgpt(text),
-  davidDeepseek: async (text) => davidApi.deepseek(text),
-  davidPublic: async (text) => davidApi.publicAi(text),
-  davidPerplexity: async (text) => davidApi.perplexity(text),
-  
-  // All Gifted endpoints
-  giftedGpt4o: async (text) => giftedApi.gpt4o(text),
-  giftedGemini: async (text) => giftedApi.gemini(text),
-  giftedDeepseek: async (text) => giftedApi.deepseek(text),
-  giftedLlama: async (text) => giftedApi.llama(text),
-  giftedMistral: async (text) => giftedApi.mistral(text),
-  
-  // Smart fallback - tries all APIs
+  // Smart chat - tries all APIs in order
   smartChat: async (text) => {
     const models = [
       { name: "david-chat", fn: () => ai.chat(text) },
-      { name: "david-gpt3", fn: () => ai.davidGpt3(text) },
-      { name: "david-chatgpt", fn: () => ai.davidChatgpt(text) },
-      { name: "david-deepseek", fn: () => ai.davidDeepseek(text) },
-      { name: "david-public", fn: () => ai.davidPublic(text) },
-      { name: "david-perplexity", fn: () => ai.davidPerplexity(text) },
-      { name: "gifted-gpt4o", fn: () => ai.giftedGpt4o(text) },
-      { name: "gifted-gemini", fn: () => ai.giftedGemini(text) },
-      { name: "gifted-deepseek", fn: () => ai.giftedDeepseek(text) },
-      { name: "gifted-llama", fn: () => ai.giftedLlama(text) },
-      { name: "gifted-mistral", fn: () => ai.giftedMistral(text) }
+      { name: "david-gpt3", fn: () => davidApi.gpt3(text) },
+      { name: "david-chatgpt", fn: () => davidApi.chatgpt(text) },
+      { name: "david-deepseek", fn: () => davidApi.deepseek(text) },
+      { name: "david-public", fn: () => davidApi.publicAi(text) },
+      { name: "david-perplexity", fn: () => davidApi.perplexity(text) },
+      { name: "david-gemini", fn: () => davidApi.gemini(text) },
+      { name: "gifted-gpt4o", fn: () => giftedApi.gpt4o(text) },
+      { name: "gifted-gemini", fn: () => giftedApi.gemini(text) },
+      { name: "gifted-deepseek", fn: () => giftedApi.deepseek(text) },
+      { name: "gifted-llama", fn: () => giftedApi.llama(text) },
+      { name: "gifted-mistral", fn: () => giftedApi.mistral(text) }
     ];
     
     for (const model of models) {
@@ -168,38 +177,131 @@ const ai = {
       }
     }
     return null;
-  }
+  },
+  
+  // Individual access
+  davidGpt3: (text) => davidApi.gpt3(text),
+  davidChatgpt: (text) => davidApi.chatgpt(text),
+  davidDeepseek: (text) => davidApi.deepseek(text),
+  davidPerplexity: (text) => davidApi.perplexity(text),
+  davidGemini: (text) => davidApi.gemini(text),
+  giftedGpt4o: (text) => giftedApi.gpt4o(text),
+  giftedGemini: (text) => giftedApi.gemini(text),
+  giftedDeepseek: (text) => giftedApi.deepseek(text)
 };
 
-// Download endpoints
+// ==================== DOWNLOAD ENDPOINTS ====================
+
 const downloads = {
-  youtubeMp3: async (url) => {
-    const result = await getFast(`${DAVID_BASE}/youtube/mp3?url=${encodeURIComponent(url)}`);
-    return result;
+  // Facebook download - prefers SD automatically
+  facebook: async (url, preferHD = false) => {
+    try {
+      const result = await getFast(`${DAVID_BASE}/facebook?url=${encodeURIComponent(url)}`);
+      const sdLink = result?.sd || result?.download_url || result?.url;
+      const hdLink = result?.hd || result?.hd_url;
+      const link = preferHD && hdLink ? hdLink : sdLink;
+      return { url: link, isHD: preferHD && hdLink };
+    } catch (err) {
+      throw err;
+    }
   },
-  youtubeVideo: async (url) => {
-    const result = await getFast(`${DAVID_BASE}/download/ytvideo?url=${encodeURIComponent(url)}`);
-    return result;
-  },
+  
+  // Instagram download
   instagram: async (url) => {
     const result = await getFast(`${DAVID_BASE}/download/instagram?url=${encodeURIComponent(url)}`);
-    return result;
+    return result?.downloadUrl || result?.url || result?.result;
   },
-  facebook: async (url) => {
-    const result = await getFast(`${DAVID_BASE}/facebook?url=${encodeURIComponent(url)}`);
-    return result;
-  },
+  
+  // TikTok download
   tiktok: async (url) => {
     const result = await getFast(`${DAVID_BASE}/download/tiktok?url=${encodeURIComponent(url)}`);
-    return result;
+    return result?.downloadUrl || result?.url || result?.result;
   },
+  
+  // Twitter/X download
   twitter: async (url) => {
-    const result = await getFast(`${DAVID_BASE}/download/twitter?url=${encodeURIComponent(url)}`);
-    return result;
+    const result = await getFast(`${DAVID_BASE}/twitter?url=${encodeURIComponent(url)}`);
+    return result?.downloadUrl || result?.url || result?.result;
+  },
+  
+  // YouTube MP3
+  youtubeMp3: async (url) => {
+    const result = await getFast(`${DAVID_BASE}/youtube/mp3?url=${encodeURIComponent(url)}`);
+    return result?.downloadUrl || result?.url || result?.result;
+  },
+  
+  // YouTube Video
+  youtubeVideo: async (url) => {
+    const result = await getFast(`${DAVID_BASE}/download/ytvideo?url=${encodeURIComponent(url)}`);
+    return result?.downloadUrl || result?.url || result?.result;
+  },
+  
+  // Pinterest download
+  pinterest: async (url) => {
+    const result = await getFast(`${DAVID_BASE}/download/pinterest?url=${encodeURIComponent(url)}`);
+    return result?.downloadUrl || result?.url || result?.result;
   }
 };
 
-// Sports endpoints
+// ==================== MUSIC PLAYBACK ====================
+
+const music = {
+  play: async (query) => {
+    const result = await getFast(`${DAVID_BASE}/play?query=${encodeURIComponent(query)}`);
+    return result?.url || result?.downloadUrl || result?.result;
+  }
+};
+
+// ==================== IMAGE GENERATION ====================
+
+const imageGen = {
+  // Flux v2 for image generation
+  fluxv2: async (prompt) => {
+    const result = await getFast(`${DAVID_BASE}/fluxv2?prompt=${encodeURIComponent(prompt)}`);
+    return result?.url || result?.image_url || result?.result;
+  },
+  
+  // NanoBanana for image editing
+  nanobanana2: async (imageUrl, prompt) => {
+    const result = await getFast(`${DAVID_BASE}/nanobanana2?url=${encodeURIComponent(imageUrl)}&prompt=${encodeURIComponent(prompt)}`);
+    return result?.url || result?.image_url || result?.result;
+  }
+};
+
+// ==================== IMAGE UPLOAD ====================
+
+const upload = {
+  // Catbox upload
+  catbox: async (fileUrl) => {
+    try {
+      const form = new FormData();
+      form.append('file', fileUrl);
+      const response = await postFast('https://apis.davidcyril.name.ng/uploader/catbox', form, {
+        headers: form.getHeaders()
+      });
+      return response?.url || response?.result;
+    } catch (err) {
+      throw err;
+    }
+  },
+  
+  // ImgBB upload
+  imgbb: async (fileUrl) => {
+    try {
+      const form = new FormData();
+      form.append('file', fileUrl);
+      const response = await postFast('https://apis.davidcyril.name.ng/upload/imgbb', form, {
+        headers: form.getHeaders()
+      });
+      return response?.url || response?.result;
+    } catch (err) {
+      throw err;
+    }
+  }
+};
+
+// ==================== SPORTS ENDPOINTS ====================
+
 const sports = {
   liveScores: async () => {
     const result = await getFast(`${DAVID_BASE}/sports/live-scores`);
@@ -227,7 +329,8 @@ const sports = {
   }
 };
 
-// Games endpoints
+// ==================== GAMES ENDPOINTS ====================
+
 const games = {
   rollDice: async (sides = 6, count = 1) => {
     const result = await getFast(`${DAVID_BASE}/api/games/dice?sides=${sides}&count=${count}`);
@@ -263,7 +366,8 @@ const games = {
   }
 };
 
-// News endpoints
+// ==================== NEWS ENDPOINTS ====================
+
 const news = {
   trending: async () => {
     const result = await getFast(`${DAVID_BASE}/news/trending`);
@@ -283,7 +387,8 @@ const news = {
   }
 };
 
-// Lyrics endpoint
+// ==================== LYRICS ENDPOINTS ====================
+
 const lyrics = {
   search: async (title, artist) => {
     const result = await getFast(`${DAVID_BASE}/lyrics2?t=${encodeURIComponent(title)}&a=${encodeURIComponent(artist)}`);
@@ -291,7 +396,8 @@ const lyrics = {
   }
 };
 
-// Stickers
+// ==================== STICKERS ENDPOINTS ====================
+
 const stickers = {
   search: async (query) => {
     const result = await getFast(`${DAVID_BASE}/search/stickerly?q=${encodeURIComponent(query)}`);
@@ -299,7 +405,8 @@ const stickers = {
   }
 };
 
-// Quotes
+// ==================== QUOTES ENDPOINTS ====================
+
 const quotes = {
   random: async () => {
     const result = await getFast(`${DAVID_BASE}/quotes/random`);
@@ -311,15 +418,23 @@ const quotes = {
   }
 };
 
+// ==================== EXPORT ALL ====================
+
 module.exports = { 
-  ai, 
-  downloads, 
-  sports, 
-  games, 
-  news, 
-  lyrics, 
+  ai,
+  davidApi,
+  giftedApi,
+  downloads,
+  music,
+  imageGen,
+  upload,
+  sports,
+  games,
+  news,
+  lyrics,
   stickers,
   quotes,
-  davidApi,
-  giftedApi
+  getFast,
+  postFast,
+  extractResponse
 };
